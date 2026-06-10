@@ -20,6 +20,20 @@ Describe 'Convert-RegistryValue' {
         It 'returns long for QWord' {
             (Convert-RegistryValue -Type 'qword' -Value 12345678901234).GetType().Name | Should -Be 'Int64'
         }
+
+        It 'wraps DWord values above Int32.MaxValue to their bit pattern' {
+            # 0xFFFFFFFF is a common policy sentinel; registry stores it as Int32 -1
+            (Convert-RegistryValue -Type 'dword' -Value 4294967295) | Should -Be (-1)
+            (Convert-RegistryValue -Type 'dword' -Value 2147483648) | Should -Be ([int]::MinValue)
+        }
+
+        It 'rejects values beyond the DWord range' {
+            { Convert-RegistryValue -Type 'dword' -Value 4294967296 } | Should -Throw
+        }
+
+        It 'wraps QWord values above Int64.MaxValue to their bit pattern' {
+            (Convert-RegistryValue -Type 'qword' -Value ([uint64]::MaxValue)) | Should -Be (-1)
+        }
     }
 
     Context 'String / ExpandString' {
@@ -141,6 +155,41 @@ Describe 'Expand-ConfigVariables' {
     }
 }
 
+Describe 'Test-ByteArrayEqual' {
+
+    It 'matches identical byte arrays' {
+        Test-ByteArrayEqual -First ([byte[]]@(0xDE, 0xAD)) -Second ([byte[]]@(0xDE, 0xAD)) | Should -Be $true
+    }
+
+    It 'is order-sensitive (regression: Compare-Object treated permutations as equal)' {
+        Test-ByteArrayEqual -First ([byte[]]@(0xFF, 0x00)) -Second ([byte[]]@(0x00, 0xFF)) | Should -Be $false
+    }
+
+    It 'rejects different lengths and nulls' {
+        Test-ByteArrayEqual -First ([byte[]]@(1, 2)) -Second ([byte[]]@(1, 2, 3)) | Should -Be $false
+        Test-ByteArrayEqual -First $null -Second ([byte[]]@(1)) | Should -Be $false
+    }
+}
+
+Describe 'ConvertTo-UnsignedNumber' {
+
+    It 'reinterprets negative DWord as unsigned' {
+        ConvertTo-UnsignedNumber -Type 'dword' -Value (-1) | Should -Be 4294967295
+    }
+
+    It 'leaves positive DWord unchanged' {
+        ConvertTo-UnsignedNumber -Type 'dword' -Value 100 | Should -Be 100
+    }
+
+    It 'reinterprets negative QWord as unsigned' {
+        ConvertTo-UnsignedNumber -Type 'qword' -Value (-1L) | Should -Be ([uint64]::MaxValue)
+    }
+
+    It 'passes non-numeric types through' {
+        ConvertTo-UnsignedNumber -Type 'string' -Value 'abc' | Should -Be 'abc'
+    }
+}
+
 Describe 'Compare-RegistryValue' {
 
     Context 'Existence checks' {
@@ -218,6 +267,55 @@ Describe 'Compare-RegistryValue' {
         }
     }
 
+    Context 'String operators treat wildcard characters literally' {
+        BeforeAll {
+            Mock Test-Path { $true } -ParameterFilter { $Path -eq 'HKLM:\Fake' }
+            Mock Get-ItemProperty { [PSCustomObject]@{ V = 'item[1] and more' } } -ParameterFilter { $Name -eq 'V' }
+        }
+
+        It 'Contains matches literal brackets (regression: -like interpreted them as wildcards)' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'V' -Type 'String' -ExpectedValue '[1]' -Comparison 'Contains').Match | Should -Be $true
+        }
+        It 'Contains does not treat * as match-everything' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'V' -Type 'String' -ExpectedValue '*' -Comparison 'Contains').Match | Should -Be $false
+        }
+        It 'StartsWith matches literal bracket prefix' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'V' -Type 'String' -ExpectedValue 'item[1]' -Comparison 'StartsWith').Match | Should -Be $true
+        }
+    }
+
+    Context 'Binary equality is order-sensitive' {
+        BeforeAll {
+            Mock Test-Path { $true } -ParameterFilter { $Path -eq 'HKLM:\Fake' }
+            Mock Get-ItemProperty { [PSCustomObject]@{ Bin = [byte[]]@(0xFF, 0x00) } } -ParameterFilter { $Name -eq 'Bin' }
+        }
+
+        It 'Equals rejects same bytes in different order' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'Bin' -Type 'Binary' -ExpectedValue '00,FF').Match | Should -Be $false
+        }
+        It 'Equals matches identical byte sequence' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'Bin' -Type 'Binary' -ExpectedValue 'FF,00').Match | Should -Be $true
+        }
+        It 'NotEquals detects permuted bytes as different' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'Bin' -Type 'Binary' -ExpectedValue '00,FF' -Comparison 'NotEquals').Match | Should -Be $true
+        }
+    }
+
+    Context 'Numeric comparisons are unsigned' {
+        BeforeAll {
+            Mock Test-Path { $true } -ParameterFilter { $Path -eq 'HKLM:\Fake' }
+            # 0xFFFFFFFF reads back from the registry as Int32 -1
+            Mock Get-ItemProperty { [PSCustomObject]@{ Sentinel = -1 } } -ParameterFilter { $Name -eq 'Sentinel' }
+        }
+
+        It '0xFFFFFFFF is GreaterThan 100 (regression: signed compare said no)' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'Sentinel' -Type 'DWord' -ExpectedValue 100 -Comparison 'GreaterThan').Match | Should -Be $true
+        }
+        It '0xFFFFFFFF is not LessThanOrEqual 100' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'Sentinel' -Type 'DWord' -ExpectedValue 100 -Comparison 'LessThanOrEqual').Match | Should -Be $false
+        }
+    }
+
     Context 'MultiString equality honors CaseSensitive' {
         BeforeAll {
             Mock Test-Path { $true } -ParameterFilter { $Path -eq 'HKLM:\Fake' }
@@ -242,6 +340,59 @@ Describe 'Compare-RegistryValue' {
             $r.Match | Should -Be $false
             $r.Reason | Should -Match 'Key does not exist'
         }
+    }
+}
+
+Describe 'Get-Configuration validation' {
+
+    BeforeEach {
+        $script:TmpConfig = Join-Path $env:TEMP "rce-cfg-$(Get-Random).json"
+    }
+
+    AfterEach {
+        Remove-Item -LiteralPath $script:TmpConfig -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'rejects a Set group without values (silent no-op typo)' {
+        '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set"}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+        { Get-Configuration -Path $script:TmpConfig -ErrorAction SilentlyContinue } | Should -Throw "*values*"
+    }
+
+    It 'rejects a group with a missing action and no values (action defaults to Set)' {
+        '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X"}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+        { Get-Configuration -Path $script:TmpConfig -ErrorAction SilentlyContinue } | Should -Throw "*values*"
+    }
+
+    It 'accepts a DeleteKey group without values' {
+        '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"DeleteKey"}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+        { Get-Configuration -Path $script:TmpConfig } | Should -Not -Throw
+    }
+
+    It 'rejects an unknown scope' {
+        '{"version":"1.0","settings":[{"scope":"Banana","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":1}]}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+        { Get-Configuration -Path $script:TmpConfig -ErrorAction SilentlyContinue } | Should -Throw "*scope*"
+    }
+
+    It 'rejects an unknown action' {
+        '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Nuke","values":[{"name":"V","type":"DWord","data":1}]}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+        { Get-Configuration -Path $script:TmpConfig -ErrorAction SilentlyContinue } | Should -Throw "*action*"
+    }
+
+    It 'rejects a path containing wildcard characters' {
+        '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\App [x64]","action":"Set","values":[{"name":"V","type":"DWord","data":1}]}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+        { Get-Configuration -Path $script:TmpConfig -ErrorAction SilentlyContinue } | Should -Throw "*wildcard*"
+    }
+
+    It 'rejects a value name containing wildcard characters' {
+        '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"Size[MB]","type":"DWord","data":1}]}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+        { Get-Configuration -Path $script:TmpConfig -ErrorAction SilentlyContinue } | Should -Throw "*wildcard*"
     }
 }
 

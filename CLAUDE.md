@@ -78,7 +78,7 @@ regedit /e "C:\temp\settings.reg" "HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsof
 
 **New-IntunePackage.ps1**: Reads the sibling `Invoke-RegistryConfigEngine.ps1` and produces two self-contained scripts (`<Prefix>-Detect.ps1`, `<Prefix>-Remediate.ps1`) by replacing the engine's `INJECTION_POINT` region with the embedded config (here-string), `$script:__ForcedMode`, and `$script:__ForcedEventLog = $true`. The engine is the single source of truth — there is no separate template. Generated scripts pin to the engine version they were built against. `-VerboseLogging` injects `$VerbosePreference = 'Continue'` (standard PS mechanism, not a custom flag).
 
-**ConvertFrom-RegistryExport.ps1**: Converts Windows Registry export (.reg) files to JSON configuration format. Supports all registry value types and automatically maps HKLM→Machine, HKCU→User scopes.
+**ConvertFrom-RegistryExport.ps1**: Converts Windows Registry export (.reg) files to JSON configuration format. Supports all registry value types and automatically maps HKLM→Machine, HKCU→User, HKU\<SID>→User (SID stripped from path), HKU\.DEFAULT→DefaultUser (with a warning — .DEFAULT is technically the LocalSystem profile).
 
 ### Registry Scopes
 
@@ -112,7 +112,7 @@ Setting options:
 
 Value options:
 - `skipDetection` (optional, default: false) - When true, the value is written during remediation but not checked during detection. Useful for timestamp values like `{{DATETIME}}` that change on each run.
-- `comparison` (optional, default: "Equals") - Comparison operator for detection. Remediation always sets the `data` value (except `NotExists` which deletes).
+- `comparison` (optional, default: "Equals") - Comparison operator for detection. Remediation writes the `data` value only when the value's own comparison is not already satisfied (`NotExists` deletes instead); `skipDetection` values are always written.
 - `caseSensitive` (optional, default: false) - When true, string-typed comparisons (`Equals`, `NotEquals`, `Contains`, `StartsWith`, `EndsWith`) use ordinal case-sensitive matching. Applies to `String`, `ExpandString`, and `MultiString`.
 
 ### Comparison Operators
@@ -144,6 +144,8 @@ For `DeleteKey` actions, the engine writes a `.reg` export under `KeyBackups\` b
 - `MountedUser` → import restores the key if the same user is mounted at rollback time (otherwise the import has no durable target).
 - `TempMount` (DefaultUser, or a User profile the engine mounted itself) → not auto-restored. The backup file is retained for manual recovery.
 
+Value transactions written inside an engine-mounted hive are tagged `TempMount: true` and skipped at rollback with a warning (the temp mount no longer exists). Each transaction is rolled back independently — a failure on one logs an error and continues with the rest; any failure makes the rollback exit non-zero with a `reverted/skipped/failed` summary.
+
 **Note:** Rollback is designed for **local development and testing**, not production use. Use it to:
 - Test configurations before deploying to Intune
 - Quickly undo changes during development iteration
@@ -168,17 +170,21 @@ Get-ChildItem "$env:ProgramData\RegistryConfigEngine\Transactions\*.json"
 
 ## Key Implementation Details
 
-- User profiles enumerated from `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList`, supporting both AD SIDs (S-1-5-21-*) and Entra ID SIDs (S-1-12-1-*). Already-mounted hives in HKU are used as-is; signed-out profiles have NTUSER.DAT loaded into a temp key (`HKU\RegEngineTemp_<PID>_<rand>`) and unloaded after iteration.
+- User profiles enumerated from `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList`, supporting both AD SIDs (S-1-5-21-*) and Entra ID SIDs (S-1-12-1-*). Already-mounted hives in HKU are used as-is; signed-out profiles have NTUSER.DAT loaded into a temp key (`HKU\RegEngineTemp_<PID>_<rand>`). Profiles and the DefaultUser hive are mounted once per run (run-level caches `$script:UserProfileCache` / `$script:DefaultUserHive`), shared across all setting groups, and dismounted centrally by `Dismount-EngineMountedHives` in a `finally` around Detect/Remediate.
 - DefaultUser and engine-mounted user hives use the same temp prefix and same `Mount-UserHive` / `Dismount-RegistryHive` helpers, with garbage collection before unload to release handles.
 - At startup (Detect/Remediate modes), `Remove-OrphanedTempHives` scans HKU for `DefaultUserTemp_*` and `RegEngineTemp_*` keys whose owner PID is no longer running and unloads them. Mounts whose owner PID is still alive are left alone to avoid clobbering concurrent runs.
 - URL configs are restricted to `https://`, downloaded with a 30-second timeout, zero redirects, and may be verified against an expected SHA-256 via the `-ConfigSha256` parameter (mismatch aborts the run).
-- Binary values accept comma-separated hex (`"3C,00,00,00"`), continuous hex string with even length (`"3C000000"`), or array (`[60, 0, 0, 0]`). The parser branches on comma presence first, then falls through to hex-string handling.
+- Binary values accept comma-separated hex (`"3C,00,00,00"`), continuous hex string with even length (`"3C000000"`), or array (`[60, 0, 0, 0]`). The parser branches on comma presence first, then falls through to hex-string handling. Binary equality is byte-exact and order-sensitive (`Test-ByteArrayEqual` — never `Compare-Object`, which is order-insensitive).
+- DWord accepts the full unsigned range 0..4294967295 (upper half wrapped to the Int32 bit pattern, e.g. `4294967295` → `-1`); QWord likewise for unsigned 64-bit. Numeric range comparisons (`GreaterThan` etc.) compare the unsigned interpretation via `ConvertTo-UnsignedNumber`, so `0xFFFFFFFF` sorts above `100`.
+- A user hive that exists on disk but cannot be loaded is reported: detection marks the profile non-compliant ("could not be verified"), remediation records an error and exits 1. Stale ProfileList entries with no NTUSER.DAT on disk are skipped quietly. Same for an unavailable DefaultUser hive.
+- Remediation skips values whose own comparison is already satisfied (keeps reruns idempotent and prevents range operators from overwriting acceptable values); `skipDetection` values are always written. A `Set` group whose values are all `NotExists` does not create the key.
 - String / ExpandString / MultiString comparisons default to ordinal case-insensitive. Set `caseSensitive: true` on the value to switch to ordinal case-sensitive (uses `[string]::Equals(..., 'Ordinal')` and `String.Contains/StartsWith/EndsWith`).
 - `Expand-ConfigVariables` walks arrays of strings (so MultiString elements get variable expansion) but leaves non-string arrays (binary as `byte[]`) untouched.
 - Scripts designed to run as SYSTEM through Intune (no logged-on user dependency)
 - All scripts require PowerShell 5.1+ (compatible with Intune Remediations which use Windows PowerShell)
-- Packaged scripts auto-relaunch in 64-bit PowerShell if started in 32-bit (via `$env:SystemRoot\SysNative`)
-- Logging is always on in packaged scripts: Windows Event Log (Application/RegistryConfigEngine) + file log with 30-day retention
+- The engine (standalone and packaged) auto-relaunches in 64-bit PowerShell if started in 32-bit on a 64-bit OS (via `$env:SystemRoot\SysNative`), forwarding all bound parameters and logging a Warning breadcrumb first
+- Config validation (all load paths, including Validate mode) rejects unknown `scope`/`action` values and `Set`/`Delete` groups without a non-empty `values` array; `DeleteKey` requires no `values`. It also rejects paths/value names containing `* ? [ ]` or backtick — the registry provider would treat them as wildcards and silently match nothing (full literal-path support is a documented Future Enhancement in README.md). `New-IntunePackage.ps1` mirrors these checks.
+- Logging is always on in packaged scripts: Windows Event Log (Application/RegistryConfigEngine) + daily file log (`RegistryConfigEngine_<yyyyMMdd>.log`); `Remove-OldLogFiles` prunes log files older than 30 days at startup
 - `NotExists` comparison: detection checks value is absent; remediation deletes the value (instead of trying to set it)
 - All engine features — `skipDetection`, comparison operators, `caseSensitive`, ProfileList enumeration, URL hardening (irrelevant to packaged scripts since their config is embedded), `DeleteKey` reg-export backup — are automatically present in generated packages because the generator inlines the engine itself. There is no template drift to manage.
 - The engine is dot-source-safe: a guard around the Main Execution block (`if ($MyInvocation.InvocationName -ne '.')`) lets Pester load the engine and test its functions without triggering execution. Tests live in `tests/Engine.Tests.ps1` and run on CI alongside PSScriptAnalyzer.

@@ -63,7 +63,27 @@ if (-not $config.settings -or $config.settings.Count -eq 0) {
 }
 foreach ($setting in $config.settings) {
     if (-not $setting.scope) { throw "Each setting must have a 'scope'" }
+    if ($setting.scope -notin 'Machine', 'User', 'DefaultUser') {
+        throw "Invalid scope '$($setting.scope)' for path '$($setting.path)' - must be Machine, User, or DefaultUser"
+    }
     if (-not $setting.path)  { throw "Each setting must have a 'path'" }
+    $action = if ($setting.action) { $setting.action } else { 'Set' }
+    if ($action -notin 'Set', 'Delete', 'DeleteKey') {
+        throw "Invalid action '$($setting.action)' for path '$($setting.path)' - must be Set, Delete, or DeleteKey"
+    }
+    if ($action -ne 'DeleteKey' -and (-not $setting.values -or @($setting.values).Count -eq 0)) {
+        throw "Setting '$($setting.path)' (action: $action) requires a non-empty 'values' array"
+    }
+    if ($setting.path -match '[*?\[\]`]') {
+        throw "Path '$($setting.path)' contains wildcard characters (* ? [ ] or backtick), which the engine does not support"
+    }
+    if ($setting.values) {
+        foreach ($value in @($setting.values)) {
+            if ($value.name -match '[*?\[\]`]') {
+                throw "Value name '$($value.name)' under '$($setting.path)' contains wildcard characters (* ? [ ] or backtick), which the engine does not support"
+            }
+        }
+    }
 }
 
 # Read the engine and extract its version

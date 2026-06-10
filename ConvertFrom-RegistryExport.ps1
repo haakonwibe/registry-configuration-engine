@@ -82,7 +82,13 @@ function Get-ScopeFromHive {
         return 'User'
     }
     elseif ($HivePath -match '^HKEY_USERS\\\.DEFAULT') {
+        Write-Warning "HKEY_USERS\.DEFAULT is the LocalSystem account's profile, not the Default User template. Mapping to DefaultUser scope (C:\Users\Default) - use -Scope to override if that is not what you want."
         return 'DefaultUser'
+    }
+    elseif ($HivePath -match '^HKEY_USERS\\|^HKU\\') {
+        # Per-SID export: the SID is stripped from the path, so apply the
+        # settings to all user profiles.
+        return 'User'
     }
     else {
         Write-Warning "Unknown hive: $HivePath - defaulting to Machine scope"
@@ -156,21 +162,33 @@ function ConvertFrom-RegValue {
             }
         }
 
-        # REG_EXPAND_SZ (hex(2))
-        '^hex\(2\):(.+)$' {
+        # REG_EXPAND_SZ (hex(2)) — empty data ("hex(2):") is a valid empty string
+        '^hex\(2\):(.*)$' {
             $result.type = 'ExpandString'
-            $hexBytes = $Matches[1] -split ',' | ForEach-Object { [Convert]::ToByte($_.Trim(), 16) }
-            # UTF-16LE encoded, null-terminated
-            $result.data = [System.Text.Encoding]::Unicode.GetString($hexBytes).TrimEnd("`0")
+            $hexPart = $Matches[1].Trim()
+            if ($hexPart) {
+                $hexBytes = $hexPart -split ',' | Where-Object { $_.Trim() } | ForEach-Object { [Convert]::ToByte($_.Trim(), 16) }
+                # UTF-16LE encoded, null-terminated
+                $result.data = [System.Text.Encoding]::Unicode.GetString($hexBytes).TrimEnd("`0")
+            }
+            else {
+                $result.data = ''
+            }
         }
 
-        # REG_MULTI_SZ (hex(7))
-        '^hex\(7\):(.+)$' {
+        # REG_MULTI_SZ (hex(7)) — empty data ("hex(7):") is a valid empty list
+        '^hex\(7\):(.*)$' {
             $result.type = 'MultiString'
-            $hexBytes = $Matches[1] -split ',' | ForEach-Object { [Convert]::ToByte($_.Trim(), 16) }
-            # UTF-16LE encoded, double-null terminated, values separated by null
-            $decoded = [System.Text.Encoding]::Unicode.GetString($hexBytes).TrimEnd("`0")
-            $result.data = @($decoded -split "`0" | Where-Object { $_ })
+            $hexPart = $Matches[1].Trim()
+            if ($hexPart) {
+                $hexBytes = $hexPart -split ',' | Where-Object { $_.Trim() } | ForEach-Object { [Convert]::ToByte($_.Trim(), 16) }
+                # UTF-16LE encoded, double-null terminated, values separated by null
+                $decoded = [System.Text.Encoding]::Unicode.GetString($hexBytes).TrimEnd("`0")
+                $result.data = @($decoded -split "`0" | Where-Object { $_ })
+            }
+            else {
+                $result.data = @()
+            }
         }
 
         default {

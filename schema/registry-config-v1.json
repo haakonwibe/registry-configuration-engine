@@ -49,7 +49,14 @@
     "settingGroup": {
       "type": "object",
       "description": "A group of registry settings to apply to a specific scope and path",
-      "required": ["scope", "path", "action", "values"],
+      "required": ["scope", "path"],
+      "if": {
+        "properties": { "action": { "const": "DeleteKey" } },
+        "required": ["action"]
+      },
+      "else": {
+        "required": ["values"]
+      },
       "properties": {
         "name": {
           "type": "string",
@@ -72,7 +79,8 @@
         "action": {
           "type": "string",
           "enum": ["Set", "Delete", "DeleteKey"],
-          "description": "Action to perform: Set (create/update values), Delete (remove specific values), DeleteKey (remove entire key)"
+          "default": "Set",
+          "description": "Action to perform: Set (create/update values, default), Delete (remove specific values), DeleteKey (remove entire key - requires no 'values')"
         },
         "rebootRequired": {
           "type": "boolean",
@@ -131,7 +139,7 @@
           "type": "string",
           "enum": ["Equals", "NotEquals", "GreaterThan", "GreaterThanOrEqual", "LessThan", "LessThanOrEqual", "Contains", "StartsWith", "EndsWith", "Exists", "NotExists"],
           "default": "Equals",
-          "description": "Comparison operator for detection. Equals (default) = exact match. Numeric operators (GreaterThan, etc.) for DWord/QWord. String operators (Contains, StartsWith, EndsWith) for String. Exists/NotExists check presence. Remediation always sets the data value, except NotExists which deletes."
+          "description": "Comparison operator for detection. Equals (default) = exact match. Numeric operators (GreaterThan, etc.) for DWord/QWord, compared as unsigned. String operators (Contains, StartsWith, EndsWith) for String. Exists/NotExists check presence. Remediation writes the data value only when the comparison is not already satisfied; NotExists deletes the value instead."
         },
         "caseSensitive": {
           "type": "boolean",

@@ -6,7 +6,7 @@
   "created": "2026-01-29",
   "notes": [
     "Comparison operators allow flexible detection beyond exact equality.",
-    "Detection uses the specified operator, remediation sets the 'data' value.",
+    "Detection uses the specified operator; remediation writes the 'data' value only when the comparison is not already satisfied.",
     "Exception: 'NotExists' comparison deletes the value during remediation.",
     "Use cases: version checks, range validation, partial string matching, cleanup."
   ],

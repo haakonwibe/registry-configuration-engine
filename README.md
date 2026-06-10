@@ -163,7 +163,7 @@ The generator produces `<Prefix>-Detect.ps1` and `<Prefix>-Remediate.ps1` by rea
 
 Generated scripts always log to:
 - **Windows Event Log** (Application log, source: `RegistryConfigEngine`)
-- **File log** at `C:\ProgramData\RegistryConfigEngine\Logs\RegistryConfigEngine.log` (30-day retention)
+- **File log** at `C:\ProgramData\RegistryConfigEngine\Logs\RegistryConfigEngine_<yyyyMMdd>.log` (one file per day, pruned after 30 days)
 
 `-VerboseLogging` injects `$VerbosePreference = 'Continue'` into the generated script, surfacing every Write-Verbose / Debug-level line the engine emits (per-value detection results, hive mount/unmount messages, etc.). It uses the standard PowerShell mechanism — there is no custom flag inside the script.
 
@@ -281,7 +281,7 @@ The engine supports loading configurations from URLs:
 
 ### Comparison Operators
 
-Comparison operators allow flexible detection logic beyond exact equality. Detection uses the specified operator; remediation always sets the `data` value (except `NotExists` which deletes the value).
+Comparison operators allow flexible detection logic beyond exact equality. Detection uses the specified operator; remediation writes the `data` value only when the value's own comparison is not already satisfied (`NotExists` deletes the value instead). A value that passes a range check like `GreaterThanOrEqual` is left untouched even when other values in the config trigger remediation.
 
 | Operator | Applicable Types | Description |
 |----------|------------------|-------------|
@@ -315,7 +315,7 @@ Use these placeholders in string values - they're expanded at runtime:
 | `{{USERNAME}}` | Current username | `jsmith` |
 | `{{DOMAIN}}` | Domain/workgroup | `CONTOSO` |
 | `{{OSVERSION}}` | Windows version | `10.0.22631.0` |
-| `{{ENGINEVERSION}}` | Script version | `1.1.0` |
+| `{{ENGINEVERSION}}` | Script version | `1.2.0` |
 
 > **Tip**: For values using `{{DATETIME}}`, add `"skipDetection": true` to prevent false non-compliance reports. Since the time changes each run, the value written during remediation will never match the expected value during detection.
 
@@ -327,6 +327,8 @@ Use these placeholders in string values - they're expanded at runtime:
 | Run script in 64-bit PowerShell | **Yes** |
 | Enforce script signature check | Per your policy |
 | Run script silently | **Yes** |
+
+> If the script is accidentally started in 32-bit PowerShell on a 64-bit OS, it relaunches itself in 64-bit PowerShell via `SysNative` — this prevents HKLM\SOFTWARE writes from being silently redirected to WOW6432Node. Setting "Run script in 64-bit PowerShell" to **Yes** is still the recommended configuration.
 
 ### Monitoring
 
@@ -341,7 +343,7 @@ Output examples:
 
 On the device itself:
 - **Event Viewer** → **Application** → Source: `RegistryConfigEngine`
-- **File log**: `C:\ProgramData\RegistryConfigEngine\Logs\RegistryConfigEngine.log`
+- **File log**: `C:\ProgramData\RegistryConfigEngine\Logs\RegistryConfigEngine_<yyyyMMdd>.log`
 
 ## 📝 Logging
 
@@ -349,7 +351,7 @@ The engine writes to three sinks. Every line is tagged with a config identifier 
 
 **Standard output (stdout)** — what Intune captures and shows in the Devices → Monitor → Remediations view. Always on. The final summary line that drives the exit code is the most important record here. Format: `[REGENGINE] [<config-id>] <status> - <details>`.
 
-**File log** — `C:\ProgramData\RegistryConfigEngine\Logs\RegistryConfigEngine.log`. Always on, append-only, hardcoded path. Each line is `<ISO-8601 UTC timestamp> [<level>] [REGENGINE] [<config-id>] <message>`. Useful for cross-run troubleshooting because it survives Intune's per-run output truncation and aggregates every emitted line, not just the final summary. **No rotation** — the file grows over time. Admins can manage it externally (rotate, archive, or delete) without affecting the engine; if it can't be written, the engine logs a Verbose line and continues. Non-elevated standalone runs may not have permission to write to this path; that's expected.
+**File log** — `C:\ProgramData\RegistryConfigEngine\Logs\RegistryConfigEngine_<yyyyMMdd>.log`. Always on, append-only, hardcoded directory, one file per day. Each line is `<ISO-8601 UTC timestamp> [<level>] [REGENGINE] [<config-id>] <message>`. Useful for cross-run troubleshooting because it survives Intune's per-run output truncation and aggregates every emitted line, not just the final summary. At startup the engine deletes log files in the directory older than 30 days (including the legacy single `RegistryConfigEngine.log` from pre-1.2 versions). If a log file can't be written, the engine logs a Verbose line and continues. Non-elevated standalone runs may not have permission to write to this path; that's expected.
 
 **Windows Event Log** — Application log, source `RegistryConfigEngine`. Opt-in via `-CreateEventLog` (or always-on in scripts produced by `New-IntunePackage.ps1`) and only emitted when the engine is running elevated. The event message is the same tagged line written to the file log. A single source serves every deployment; the config identifier in the message body distinguishes them.
 
@@ -414,7 +416,7 @@ Run with verbose output:
 
 Generated scripts always log to both Windows Event Log and file. Check:
 - **Event Viewer** → **Application** → Source: `RegistryConfigEngine`
-- **File log**: `C:\ProgramData\RegistryConfigEngine\Logs\RegistryConfigEngine.log`
+- **File log**: `C:\ProgramData\RegistryConfigEngine\Logs\RegistryConfigEngine_<yyyyMMdd>.log`
 
 File logs are automatically pruned after 30 days. Use `-VerboseLogging` when packaging to include per-value detail in both log destinations.
 
@@ -438,6 +440,12 @@ Ready-to-use configuration files in the `Configs/` folder:
 | `12-global-secure-access-developer.json` | Global Secure Access - developer (full control) |
 | `13-adobe-reader-hardening.json` | Adobe Reader DC security hardening |
 | `14-adobe-acrobat-hardening.json` | Adobe Acrobat Pro/Standard DC security hardening |
+
+## 🔭 Future Enhancements
+
+**Literal registry path support.** PowerShell's registry provider treats `*`, `?`, `[`, `]` (and the backtick escape character) in `-Path`/`-Name` parameters as wildcards, so a key or value name containing them would silently match nothing — detection would report non-compliant forever while remediation "succeeds" without touching the real key. The engine currently **rejects such paths and value names at validation time** so the problem surfaces immediately instead of as a silent remediation loop.
+
+Actually *supporting* these names would require a sweep to `-LiteralPath` everywhere it exists (note: `New-Item` has no `-LiteralPath`, so key creation would need `.CreateSubKey()`), plus .NET registry APIs (`GetValue`/`SetValue`/`GetValueKind`) for value access since `Get-ItemProperty -Name` also wildcard-matches and has no literal variant — backed by real-registry integration tests. If your environment needs keys with wildcard characters in their names, open an issue.
 
 ## 🤝 Contributing
 
