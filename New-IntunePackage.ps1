@@ -139,7 +139,14 @@ $configJson
     # MatchEvaluator form avoids any $-escaping concerns in the replacement string.
     $body = [regex]::Replace($engineSrc, $injectionPattern, { param($m) $injection })
 
-    $header + $body
+    # The header here-strings and the engine body can carry different line
+    # endings (this script vs the engine source on disk). Normalize to a single
+    # CRLF style and strip trailing whitespace so the generated package is
+    # consistent and clean under PSScriptAnalyzer.
+    $text = $header + $body
+    $text = $text -replace "`r`n", "`n" -replace "`r", "`n"
+    $text = $text -replace '[ \t]+(?=\n)', '' -replace '[ \t]+$', ''
+    $text -replace "`n", "`r`n"
 }
 
 $detectPath    = Join-Path $OutputPath "$Prefix-Detect.ps1"

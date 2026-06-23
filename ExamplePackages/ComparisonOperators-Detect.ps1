@@ -2,7 +2,7 @@
 # Registry Configuration Engine — Detect (packaged for Intune)
 # Engine version : 1.2.0
 # Source config  : 09-comparison-operators.json
-# Generated      : 2026-06-10 21:59:04 +02:00
+# Generated      : 2026-06-23 18:08:46 +02:00
 # DO NOT EDIT — regenerate via New-IntunePackage.ps1
 # ============================================================================
 <#
@@ -257,13 +257,13 @@ function Write-Log {
     param(
         [Parameter(Mandatory)]
         [string]$Message,
-        
+
         [ValidateSet('Info', 'Warning', 'Error', 'Success', 'Debug')]
         [string]$Level = 'Info',
-        
+
         [int]$EventId = 1000
     )
-    
+
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $prefix = switch ($Level) {
         'Info'    { "[INFO]" }
@@ -755,11 +755,11 @@ function Convert-RegistryValue {
     param(
         [Parameter(Mandatory)]
         [string]$Type,
-        
+
         [Parameter()]
         $Value
     )
-    
+
     switch ($Type.ToLower()) {
         'string' {
             return [string]$Value
@@ -845,7 +845,7 @@ function Get-RegistryTypeKind {
         [Parameter(Mandatory)]
         [string]$Type
     )
-    
+
     switch ($Type.ToLower()) {
         'string'       { return [Microsoft.Win32.RegistryValueKind]::String }
         'expandstring' { return [Microsoft.Win32.RegistryValueKind]::ExpandString }
@@ -867,7 +867,7 @@ function Expand-ConfigVariables {
         [Parameter()]
         $Value
     )
-    
+
     if ($Value -is [string]) {
         $expanded = $Value
 
@@ -1218,11 +1218,11 @@ function Backup-RegistryValue {
     param(
         [Parameter(Mandatory)]
         [string]$Path,
-        
+
         [Parameter(Mandatory)]
         [string]$Name
     )
-    
+
     $backup = @{
         Path      = $Path
         Name      = $Name
@@ -1231,14 +1231,14 @@ function Backup-RegistryValue {
         Value     = $null
         Type      = $null
     }
-    
+
     try {
         if (Test-Path $Path) {
             $item = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
             if ($null -ne $item -and ($item.PSObject.Properties.Name -contains $Name)) {
                 $backup.Existed = $true
                 $backup.Value = $item.$Name
-                
+
                 # Get the type
                 $key = Get-Item -Path $Path
                 $backup.Type = $key.GetValueKind($Name).ToString()
@@ -1248,7 +1248,7 @@ function Backup-RegistryValue {
     catch {
         Write-Log "Could not backup value at $Path\$Name : $_" -Level Warning
     }
-    
+
     return $backup
 }
 
@@ -1261,18 +1261,18 @@ function Save-TransactionLog {
     param(
         [Parameter(Mandatory)]
         [array]$Transactions,
-        
+
         [Parameter(Mandatory)]
         [string]$LogPath
     )
-    
+
     try {
         if (-not (Test-Path $LogPath)) {
             New-Item -Path $LogPath -ItemType Directory -Force | Out-Null
         }
-        
+
         $logFile = Join-Path $LogPath "Transaction_$(Get-Date -Format 'yyyyMMdd_HHmmss_fff')_$PID.json"
-        
+
         $logData = @{
             EngineVersion    = $script:EngineVersion
             ConfigIdentifier = $script:ConfigIdentifier
@@ -1280,9 +1280,9 @@ function Save-TransactionLog {
             Timestamp        = (Get-Date).ToString("o")
             Transactions     = $Transactions
         }
-        
+
         $logData | ConvertTo-Json -Depth 10 | Out-File -FilePath $logFile -Encoding UTF8
-        
+
         Write-Log "Transaction log saved: $logFile" -Level Info
         return $logFile
     }
@@ -1440,17 +1440,17 @@ function Invoke-DetectionMode {
         [Parameter(Mandatory)]
         $Configuration
     )
-    
+
     Write-Log "Starting compliance detection..." -Level Info
-    
+
     $compliant = $true
     $nonCompliantItems = @()
-    
+
     foreach ($settingGroup in $Configuration.settings) {
         $scope = $settingGroup.scope
         $basePath = $settingGroup.path
         $action = $settingGroup.action
-        
+
         Write-Log "Checking: [$scope] $basePath (Action: $action)" -Level Debug
 
         # Determine which registry paths to check
@@ -1516,10 +1516,10 @@ function Invoke-DetectionMode {
                 }
             }
         }
-        
+
         foreach ($regPath in $registryPaths) {
             $fullPath = $regPath.Path
-            
+
             switch ($action.ToLower()) {
                 'set' {
                     foreach ($value in $settingGroup.values) {
@@ -1589,7 +1589,7 @@ function Invoke-DetectionMode {
             }
         }
     }
-    
+
     if ($compliant) {
         Write-Log "COMPLIANT - All settings match the desired configuration" -Level Success -EventId 1001
         return @{
@@ -1619,7 +1619,7 @@ function Invoke-RemediationMode {
         [Parameter(Mandatory)]
         $Configuration
     )
-    
+
     Write-Log "Starting remediation..." -Level Info
 
     $transactions = @()
@@ -1633,7 +1633,7 @@ function Invoke-RemediationMode {
         $scope = $settingGroup.scope
         $basePath = $settingGroup.path
         $action = $settingGroup.action
-        
+
         Write-Log "Processing: [$scope] $basePath (Action: $action)" -Level Info
 
         # Determine which registry paths to modify
@@ -1685,10 +1685,10 @@ function Invoke-RemediationMode {
                 }
             }
         }
-        
+
         foreach ($regPath in $registryPaths) {
             $fullPath = $regPath.Path
-            
+
             try {
                 switch ($action.ToLower()) {
                     'set' {
@@ -1832,12 +1832,12 @@ function Invoke-RemediationMode {
             }
         }
     }
-    
+
     # Save transaction log
     if ($transactions.Count -gt 0 -and -not $WhatIfPreference) {
         Save-TransactionLog -Transactions $transactions -LogPath $TransactionLogPath
     }
-    
+
     if ($success) {
         Write-Log "REMEDIATION COMPLETE - $changesApplied change(s) applied successfully" -Level Success -EventId 2001
 
@@ -2126,7 +2126,7 @@ try {
         Write-Output "$script:LogPrefix [$script:ConfigIdentifier] VALIDATION OK - Configuration is valid ($($config.settings.Count) setting groups)"
         exit $script:ExitCodes.Compliant
     }
-    
+
     # Detection / Remediation modes. Engine-mounted hives are cached for the
     # whole run (mounted once, not once per setting group) — the finally block
     # releases them even if a setting group throws.
