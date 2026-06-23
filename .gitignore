@@ -1,3 +1,6 @@
+# Internal/private configs kept locally but never published
+Configs/local/
+
 # Generated Intune remediation packages
 Packages/
 

@@ -2,7 +2,7 @@
 
 A declarative, flexible approach to managing Windows registry settings through Microsoft Intune Remediations.
 
-[![Poster](docs/images/poster-preview.png)](https://haakonwibe.github.io/registry-configuration-engine-v1/poster.html)
+[![Poster](docs/images/poster-preview.png)](https://haakonwibe.github.io/registry-configuration-engine/poster.html)
    
 *Click the image to view the interactive poster*
 
@@ -472,7 +472,7 @@ MIT License - See LICENSE file for details.
 
 ## 🙏 Acknowledgments
 
-This project was inspired by the community's work on registry management via Intune, particularly Martin Bengtsson's approach at [imab.dk](https://www.imab.dk). This implementation takes a different architectural approach using external JSON configuration for better maintainability and enterprise deployment flexibility.
+With thanks to the broader Intune and Microsoft Endpoint Management community, whose shared knowledge around registry management and Remediations helped shape this project.
 
 ## 📫 Contact
 

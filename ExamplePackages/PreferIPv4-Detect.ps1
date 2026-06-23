@@ -65,10 +65,9 @@
     Blog:           https://alttabtowork.com
     Version:        1.2.0
     Creation Date:  2026-01-28
-    
-    Inspired by the community's work on registry management, particularly Martin Bengtsson's
-    approach at imab.dk. This implementation takes a different architectural approach using
-    external JSON configuration for better maintainability and enterprise deployment.
+
+    With thanks to the Intune community for the shared knowledge on registry
+    management and Remediations that helped shape this project.
 
 .LINK
     https://alttabtowork.com
