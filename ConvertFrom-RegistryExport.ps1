@@ -293,7 +293,9 @@ foreach ($line in $joinedLines) {
 
     # Value line: "name"=value or @=value (default)
     if ($currentKey -and $line -match '^(@|"([^"]*)")\s*=\s*(.*)$') {
-        $valueName = if ($Matches[1] -eq '@') { '' } else { $Matches[2] }
+        # '@' in a .reg file is the key's default value. The engine targets it via
+        # the literal name '(default)' (the registry provider can't bind -Name '').
+        $valueName = if ($Matches[1] -eq '@') { '(default)' } else { $Matches[2] }
         $valueData = $Matches[3]
 
         $keyScope = if ($Scope) { $Scope } else { Get-ScopeFromHive $currentKey }

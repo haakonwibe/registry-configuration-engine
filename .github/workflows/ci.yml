@@ -71,17 +71,27 @@ jobs:
       - name: Smoke test the engine + generator
         shell: pwsh
         run: |
-          # Standalone Validate
-          ./Invoke-RegistryConfigEngine.ps1 -ConfigPath ./Configs/08-prefer-ipv4.json -Mode Validate
+          # Validate every shipped config
+          Get-ChildItem ./Configs/*.json | ForEach-Object {
+            ./Invoke-RegistryConfigEngine.ps1 -ConfigPath $_.FullName -Mode Validate
+            if ($LASTEXITCODE -ne 0) { Write-Error "Validate failed: $($_.Name)"; exit 1 }
+          }
 
-          # Generate a package and verify the output parses
+          # Generate packages for a representative spread of value types (binary,
+          # multistring/comparison operators, plain DWord) and verify each parses.
           $tmp = Join-Path $env:RUNNER_TEMP 'pkg-test'
           New-Item -ItemType Directory -Path $tmp -Force | Out-Null
-          ./New-IntunePackage.ps1 -ConfigPath ./Configs/08-prefer-ipv4.json -OutputPath $tmp -Prefix 'CITest'
-
-          $errors = $null
-          [void][System.Management.Automation.Language.Parser]::ParseFile("$tmp/CITest-Detect.ps1", [ref]$null, [ref]$errors)
-          if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
-          [void][System.Management.Automation.Language.Parser]::ParseFile("$tmp/CITest-Remediate.ps1", [ref]$null, [ref]$errors)
-          if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
-          Write-Host 'Generated scripts parse cleanly.'
+          $cases = @{
+            'CIBaseline'    = './Configs/08-prefer-ipv4.json'
+            'CIBinary'      = './Configs/02-outlook-fonts.json'
+            'CIComparison'  = './Configs/09-comparison-operators.json'
+          }
+          foreach ($prefix in $cases.Keys) {
+            ./New-IntunePackage.ps1 -ConfigPath $cases[$prefix] -OutputPath $tmp -Prefix $prefix
+            foreach ($suffix in 'Detect', 'Remediate') {
+              $errors = $null
+              [void][System.Management.Automation.Language.Parser]::ParseFile("$tmp/$prefix-$suffix.ps1", [ref]$null, [ref]$errors)
+              if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+            }
+          }
+          Write-Host 'All configs validate and generated scripts parse cleanly.'

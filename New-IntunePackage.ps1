@@ -55,41 +55,24 @@ if (-not (Test-Path -LiteralPath $enginePath)) {
     throw "Engine not found at: $enginePath"
 }
 
-# Read + validate the config (mirrors Get-Configuration's validation)
+# Dot-source the engine so the package-time pre-flight uses its Assert-ValidConfig —
+# the exact same validation rules (and enums) as the runtime load, single source of
+# truth. The engine is dot-source-safe (a guard around Main Execution skips it), but
+# its param() block is still processed and would overwrite our $ConfigPath with the
+# engine's empty default, so save and restore it across the dot-source.
+$savedConfigPath = $ConfigPath
+. $enginePath
+$ConfigPath = $savedConfigPath
+
+# Read + validate the config via the engine's shared validator
 $configJson = Get-Content -Path $ConfigPath -Raw -Encoding UTF8
 $config = $configJson | ConvertFrom-Json
-if (-not $config.settings -or $config.settings.Count -eq 0) {
-    throw "Configuration must contain at least one setting in the 'settings' array"
-}
-foreach ($setting in $config.settings) {
-    if (-not $setting.scope) { throw "Each setting must have a 'scope'" }
-    if ($setting.scope -notin 'Machine', 'User', 'DefaultUser') {
-        throw "Invalid scope '$($setting.scope)' for path '$($setting.path)' - must be Machine, User, or DefaultUser"
-    }
-    if (-not $setting.path)  { throw "Each setting must have a 'path'" }
-    $action = if ($setting.action) { $setting.action } else { 'Set' }
-    if ($action -notin 'Set', 'Delete', 'DeleteKey') {
-        throw "Invalid action '$($setting.action)' for path '$($setting.path)' - must be Set, Delete, or DeleteKey"
-    }
-    if ($action -ne 'DeleteKey' -and (-not $setting.values -or @($setting.values).Count -eq 0)) {
-        throw "Setting '$($setting.path)' (action: $action) requires a non-empty 'values' array"
-    }
-    if ($setting.path -match '[*?\[\]`]') {
-        throw "Path '$($setting.path)' contains wildcard characters (* ? [ ] or backtick), which the engine does not support"
-    }
-    if ($setting.values) {
-        foreach ($value in @($setting.values)) {
-            if ($value.name -match '[*?\[\]`]') {
-                throw "Value name '$($value.name)' under '$($setting.path)' contains wildcard characters (* ? [ ] or backtick), which the engine does not support"
-            }
-        }
-    }
-}
+Assert-ValidConfig -Config $config
 
-# Read the engine and extract its version
+# Engine source (for the INJECTION_POINT replacement) and its version. The version
+# is now available directly from the dot-sourced engine, no need to re-parse it.
 $engineSrc = Get-Content -Path $enginePath -Raw -Encoding UTF8
-$versionMatch = [regex]::Match($engineSrc, '\$script:EngineVersion\s*=\s*"([^"]+)"')
-$engineVersion = if ($versionMatch.Success) { $versionMatch.Groups[1].Value } else { 'unknown' }
+$engineVersion = $script:EngineVersion
 
 # A here-string is terminated by `'@` at column 0. JSON syntax doesn't allow that
 # on its own line, but reject it loudly if encountered rather than producing a
