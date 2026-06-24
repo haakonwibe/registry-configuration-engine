@@ -343,6 +343,57 @@ Describe 'Compare-RegistryValue' {
     }
 }
 
+Describe 'Assert-ValidConfig (shared validator)' {
+    # This is the function New-IntunePackage.ps1 dot-sources and calls directly, so
+    # exercise it against parsed config objects the way the generator does.
+
+    It 'accepts a valid config object' {
+        $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":1}]}]}' | ConvertFrom-Json
+        { Assert-ValidConfig -Config $cfg } | Should -Not -Throw
+    }
+
+    It 'throws on an invalid scope' {
+        $cfg = '{"version":"1.0","settings":[{"scope":"Banana","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":1}]}]}' | ConvertFrom-Json
+        { Assert-ValidConfig -Config $cfg } | Should -Throw "*scope*"
+    }
+
+    It 'throws on an invalid value type' {
+        $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"Dword32","data":1}]}]}' | ConvertFrom-Json
+        { Assert-ValidConfig -Config $cfg } | Should -Throw "*invalid type*"
+    }
+
+    It 'defaults a missing action to Set (mutates the setting in place)' {
+        $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","values":[{"name":"V","type":"DWord","data":1}]}]}' | ConvertFrom-Json
+        Assert-ValidConfig -Config $cfg
+        $cfg.settings[0].action | Should -Be 'Set'
+    }
+
+    It 'rejects an empty value name (must use (default))' {
+        $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"","type":"String","data":"x"}]}]}' | ConvertFrom-Json
+        { Assert-ValidConfig -Config $cfg } | Should -Throw "*(default)*"
+    }
+
+    It 'accepts (default) as a value name' {
+        $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"(default)","type":"String","data":"x"}]}]}' | ConvertFrom-Json
+        { Assert-ValidConfig -Config $cfg } | Should -Not -Throw
+    }
+
+    It 'rejects a numeric comparison on a String type' {
+        $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"String","data":"5","comparison":"GreaterThan"}]}]}' | ConvertFrom-Json
+        { Assert-ValidConfig -Config $cfg } | Should -Throw "*numeric comparison*"
+    }
+
+    It 'rejects a string comparison on a DWord type' {
+        $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":1,"comparison":"Contains"}]}]}' | ConvertFrom-Json
+        { Assert-ValidConfig -Config $cfg } | Should -Throw "*string comparison*"
+    }
+
+    It 'accepts a numeric comparison on a DWord type' {
+        $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":100,"comparison":"GreaterThanOrEqual"}]}]}' | ConvertFrom-Json
+        { Assert-ValidConfig -Config $cfg } | Should -Not -Throw
+    }
+}
+
 Describe 'Get-Configuration validation' {
 
     BeforeEach {
@@ -393,6 +444,118 @@ Describe 'Get-Configuration validation' {
         '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"Size[MB]","type":"DWord","data":1}]}]}' |
             Set-Content -Path $script:TmpConfig -Encoding UTF8
         { Get-Configuration -Path $script:TmpConfig -ErrorAction SilentlyContinue } | Should -Throw "*wildcard*"
+    }
+
+    It 'rejects a value with an invalid type' {
+        '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"Dword32","data":1}]}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+        { Get-Configuration -Path $script:TmpConfig -ErrorAction SilentlyContinue } | Should -Throw "*invalid type*"
+    }
+
+    It 'rejects a value with an invalid comparison operator' {
+        '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":1,"comparison":"Contain"}]}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+        { Get-Configuration -Path $script:TmpConfig -ErrorAction SilentlyContinue } | Should -Throw "*invalid comparison*"
+    }
+
+    It 'rejects a Set value missing its type' {
+        '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","data":1}]}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+        { Get-Configuration -Path $script:TmpConfig -ErrorAction SilentlyContinue } | Should -Throw "*requires a 'type'*"
+    }
+
+    It 'accepts a typeless NotExists value in a Set group (value is deleted, not written)' {
+        '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"Legacy","comparison":"NotExists"}]}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+        { Get-Configuration -Path $script:TmpConfig } | Should -Not -Throw
+    }
+
+    It 'accepts a Delete value without a type' {
+        '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Delete","values":[{"name":"V"}]}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+        { Get-Configuration -Path $script:TmpConfig } | Should -Not -Throw
+    }
+
+    It 'accepts valid type and comparison' {
+        '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":100,"comparison":"GreaterThanOrEqual"}]}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+        { Get-Configuration -Path $script:TmpConfig } | Should -Not -Throw
+    }
+}
+
+Describe 'Invoke-DetectionMode error isolation' {
+
+    It 'marks an item non-compliant instead of aborting when a value throws during evaluation' {
+        # A comparison that slipped past load-time validation makes Compare-RegistryValue's
+        # [ValidateSet] throw at parameter binding. The per-path try/catch should record it
+        # as a non-compliant item rather than letting it bubble up as a ConfigError.
+        Mock Test-Path { $true }
+        Mock Get-ItemProperty { [PSCustomObject]@{ V = 'x' } }
+
+        $cfg = [PSCustomObject]@{
+            settings = @(
+                [PSCustomObject]@{
+                    scope  = 'Machine'
+                    path   = 'SOFTWARE\Fake'
+                    action = 'Set'
+                    values = @([PSCustomObject]@{ name = 'V'; type = 'String'; data = 'x'; comparison = 'Bogus' })
+                }
+            )
+        }
+
+        # Call directly (not inside a Should -Not -Throw block, which runs in a child
+        # scope and would discard $out): if the per-path catch regressed, the binding
+        # error would propagate here and fail the test outright.
+        $out = Invoke-DetectionMode -Configuration $cfg -WarningAction SilentlyContinue
+
+        # Invoke-DetectionMode emits Info log lines to the success stream too; pick the result hashtable.
+        $result = $out | Where-Object { $_ -is [hashtable] } | Select-Object -Last 1
+        $result.Compliant | Should -Be $false
+        ($result.NonCompliantItems.Reason -join ' ') | Should -Match 'Error during detection'
+    }
+}
+
+Describe 'Invoke-RollbackMode value type coercion' {
+    # The transaction log is JSON: a Binary byte[] round-trips to a number array and a
+    # MultiString string[] to an object array. Rollback must re-coerce before
+    # Set-ItemProperty -Type Binary/MultiString (which reject the raw arrays).
+
+    It 'restores a Binary value as [byte[]] after the JSON round-trip' {
+        $tmpFile = Join-Path $env:TEMP "rce-rb-bin-$(Get-Random).json"
+        @{
+            ConfigIdentifier = 'bin-test'
+            Transactions = @(
+                @{ Path = 'HKCU:\Software\RCETest'; Name = 'Blob'; Existed = $true; Type = 'Binary'; Value = [byte[]]@(60, 0, 0, 0) }
+            )
+        } | ConvertTo-Json -Depth 10 | Set-Content -Path $tmpFile -Encoding UTF8
+
+        Mock Test-Path { $true }
+        Mock Set-ItemProperty { }
+        Mock New-Item { }
+        try {
+            Invoke-RollbackMode -TransactionFile $tmpFile | Out-Null
+            Should -Invoke Set-ItemProperty -Times 1 -ParameterFilter { $Value -is [byte[]] -and $Value.Length -eq 4 }
+        }
+        finally { Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue }
+    }
+
+    It 'restores a MultiString value as [string[]] after the JSON round-trip' {
+        $tmpFile = Join-Path $env:TEMP "rce-rb-multi-$(Get-Random).json"
+        @{
+            ConfigIdentifier = 'multi-test'
+            Transactions = @(
+                @{ Path = 'HKCU:\Software\RCETest'; Name = 'List'; Existed = $true; Type = 'MultiString'; Value = [string[]]@('a', 'b') }
+            )
+        } | ConvertTo-Json -Depth 10 | Set-Content -Path $tmpFile -Encoding UTF8
+
+        Mock Test-Path { $true }
+        Mock Set-ItemProperty { }
+        Mock New-Item { }
+        try {
+            Invoke-RollbackMode -TransactionFile $tmpFile | Out-Null
+            Should -Invoke Set-ItemProperty -Times 1 -ParameterFilter { $Value -is [string[]] -and $Value.Length -eq 2 }
+        }
+        finally { Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue }
     }
 }
 
@@ -449,6 +612,31 @@ Describe 'Invoke-RollbackMode identifier resolution' {
         }
         finally {
             Remove-Item -LiteralPath $tmpFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Describe 'ConvertFrom-RegistryExport default value' {
+    It 'maps a .reg default value (@=) to the name (default), never an empty string' {
+        $converter = Join-Path (Split-Path -Parent $script:EnginePath) 'ConvertFrom-RegistryExport.ps1'
+        $reg  = Join-Path $env:TEMP "rce-conv-$(Get-Random).reg"
+        $json = [System.IO.Path]::ChangeExtension($reg, '.json')
+        @(
+            'Windows Registry Editor Version 5.00',
+            '',
+            '[HKEY_LOCAL_MACHINE\SOFTWARE\RCETest]',
+            '@="defaultval"',
+            '"Other"="x"'
+        ) -join "`r`n" | Set-Content -Path $reg -Encoding UTF8
+        try {
+            & $converter -Path $reg -OutputPath $json *> $null
+            $cfg = Get-Content -Path $json -Raw | ConvertFrom-Json
+            $names = $cfg.settings | ForEach-Object { $_.values } | ForEach-Object { $_.name }
+            $names | Should -Contain '(default)'
+            $names | Should -Not -Contain ''
+        }
+        finally {
+            Remove-Item -LiteralPath $reg, $json -Force -ErrorAction SilentlyContinue
         }
     }
 }

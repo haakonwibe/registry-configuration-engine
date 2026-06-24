@@ -1,8 +1,8 @@
 # ============================================================================
 # Registry Configuration Engine — Detect (packaged for Intune)
-# Engine version : 1.2.0
+# Engine version : 1.2.1
 # Source config  : 09-comparison-operators.json
-# Generated      : 2026-06-23 18:08:46 +02:00
+# Generated      : 2026-06-24 11:48:49 +02:00
 # DO NOT EDIT — regenerate via New-IntunePackage.ps1
 # ============================================================================
 <#
@@ -63,7 +63,7 @@
 .NOTES
     Author:         Haakon Wibe
     Blog:           https://alttabtowork.com
-    Version:        1.2.0
+    Version:        1.2.1
     Creation Date:  2026-01-28
 
     With thanks to the Intune community for the shared knowledge on registry
@@ -208,7 +208,7 @@ $script:__ForcedEventLog = $true
 #endregion
 
 #region Script Configuration
-$script:EngineVersion = "1.2.0"
+$script:EngineVersion = "1.2.1"
 $script:EventLogSource = "RegistryConfigEngine"
 $script:EventLogName = "Application"
 $script:LogPrefix = "[REGENGINE]"
@@ -222,6 +222,18 @@ $script:ConfigIdentifier = "unknown"
 # to write — that's logged as Verbose and otherwise ignored.
 $script:LogFilePath = "$env:ProgramData\RegistryConfigEngine\Logs\RegistryConfigEngine_$(Get-Date -Format 'yyyyMMdd').log"
 $script:LogRetentionDays = 30
+
+# Canonical enums shared by config validation (Get-Configuration) and used as the
+# error-message source of truth. Compare-RegistryValue's [ValidateSet] must be kept
+# in sync with $ValidComparisonOperators below (ValidateSet cannot reference a
+# variable), as must the type switches in Convert-RegistryValue / Get-RegistryTypeKind.
+# Membership tests use -in/-notin, which are case-insensitive (matching the runtime
+# converters' .ToLower()).
+$script:ValidRegistryTypes = @('String', 'ExpandString', 'DWord', 'QWord', 'Binary', 'MultiString')
+$script:ValidComparisonOperators = @(
+    'Equals', 'NotEquals', 'GreaterThan', 'GreaterThanOrEqual', 'LessThan',
+    'LessThanOrEqual', 'Contains', 'StartsWith', 'EndsWith', 'Exists', 'NotExists'
+)
 
 # Prefix for temp-mounted hives. Encodes our PID so concurrent runs don't unload
 # each other's mounts during orphan cleanup.
@@ -376,6 +388,10 @@ function Show-RebootToast {
 
         # PowerShell script to show toast (runs in Windows PowerShell 5.1 for WinRT compatibility)
         # Uses Windows.SystemToast.SecurityAndMaintenance as AppId for professional appearance
+        # NOTE: $Title/$Message are interpolated into this script and then base64-encoded and
+        # run by a scheduled task. They are trusted (hardcoded defaults / caller-supplied), NOT
+        # config-sourced. If a future change ever wires registry-config data into them, escape it
+        # first (or pass via a non-code channel) — interpolating untrusted text here is code injection.
         $toastScript = @"
 `$ErrorActionPreference = 'Stop'
 try {
@@ -791,9 +807,13 @@ function Convert-RegistryValue {
             }
         }
         'binary' {
-            # Accept comma-separated hex values, hex string, or array
+            # Accept comma-separated hex values, hex string, or array.
+            # The comma operator (,[byte[]]...) stops the pipeline from unrolling the
+            # array back into Object[] on return, the same way the multistring branch
+            # preserves [string[]]. Without it, callers (and transaction-log rollback)
+            # get Object[] instead of a real byte[].
             if ($Value -is [array]) {
-                return [byte[]]$Value
+                return ,[byte[]]$Value
             }
             $stringValue = [string]$Value
             if ($stringValue.Contains(',')) {
@@ -802,7 +822,7 @@ function Convert-RegistryValue {
                     throw "Invalid binary value format (comma-separated hex expected): $Value"
                 }
                 $cleanValue = $stringValue -replace '\s+', ',' -replace ',+', ','
-                return [byte[]]($cleanValue -split ',' | Where-Object { $_ } | ForEach-Object { [Convert]::ToByte($_.Trim(), 16) })
+                return ,[byte[]]($cleanValue -split ',' | Where-Object { $_ } | ForEach-Object { [Convert]::ToByte($_.Trim(), 16) })
             }
             elseif ($stringValue -match '^(0x)?[0-9A-Fa-f]+$') {
                 # Single hex string
@@ -813,7 +833,7 @@ function Convert-RegistryValue {
                 $bytes = for ($i = 0; $i -lt $hexString.Length; $i += 2) {
                     [Convert]::ToByte($hexString.Substring($i, 2), 16)
                 }
-                return [byte[]]$bytes
+                return ,[byte[]]$bytes
             }
             else {
                 throw "Invalid binary value format: $Value"
@@ -1296,6 +1316,106 @@ function Save-TransactionLog {
 
 #region Configuration Loading
 
+function Assert-ValidConfig {
+    <#
+    .SYNOPSIS
+        Validates a parsed configuration object, throwing on the first problem found.
+    .DESCRIPTION
+        Pure validation — no registry access, no logging — so it can be the single
+        source of truth shared by Get-Configuration (runtime load) and
+        New-IntunePackage.ps1 (package-time pre-flight, which dot-sources the engine
+        and calls this). The canonical enums live in $script:ValidRegistryTypes /
+        $script:ValidComparisonOperators. Mutates each setting to add a default
+        action='Set' when absent, matching what the detect/remediate code expects.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        $Config
+    )
+
+    if (-not $Config.settings -or $Config.settings.Count -eq 0) {
+        throw "Configuration must contain at least one setting in the 'settings' array"
+    }
+
+    foreach ($setting in $Config.settings) {
+        if (-not $setting.scope) {
+            throw "Each setting must have a 'scope' (Machine, User, or DefaultUser)"
+        }
+        if ($setting.scope -notin 'Machine', 'User', 'DefaultUser') {
+            throw "Invalid scope '$($setting.scope)' for path '$($setting.path)' - must be Machine, User, or DefaultUser"
+        }
+        if (-not $setting.path) {
+            throw "Each setting must have a 'path'"
+        }
+        if (-not $setting.action) {
+            # Default action is 'Set'
+            $setting | Add-Member -NotePropertyName 'action' -NotePropertyValue 'Set' -Force
+        }
+        if ($setting.action -notin 'Set', 'Delete', 'DeleteKey') {
+            throw "Invalid action '$($setting.action)' for path '$($setting.path)' - must be Set, Delete, or DeleteKey"
+        }
+        # A Set/Delete group with no values would silently do nothing —
+        # catch the typo at validation time. DeleteKey needs no values.
+        if ($setting.action -ne 'DeleteKey' -and (-not $setting.values -or @($setting.values).Count -eq 0)) {
+            throw "Setting '$($setting.path)' (action: $($setting.action)) requires a non-empty 'values' array"
+        }
+        # The registry provider treats * ? [ ] (and the backtick escape) in
+        # -Path/-Name as wildcards, so such names would silently match
+        # nothing at detect/remediate time. Reject them loudly here until
+        # the engine uses literal registry APIs throughout (see Future
+        # Enhancements in README.md).
+        if ($setting.path -match '[*?\[\]`]') {
+            throw "Path '$($setting.path)' contains wildcard characters (* ? [ ] or backtick), which the engine does not support"
+        }
+        if ($setting.values) {
+            foreach ($value in @($setting.values)) {
+                # An empty name targets the key's default value, but the registry
+                # provider can't bind -Name '' (Set-ItemProperty throws). The default
+                # value must be written as '(default)' — reject '' with that guidance
+                # instead of failing at remediation time.
+                if ([string]::IsNullOrEmpty($value.name)) {
+                    throw "A value under '$($setting.path)' has an empty name. Use '(default)' to target the key's default value."
+                }
+                if ($value.name -match '[*?\[\]`]') {
+                    throw "Value name '$($value.name)' under '$($setting.path)' contains wildcard characters (* ? [ ] or backtick), which the engine does not support"
+                }
+                # Validate type/comparison enums at load time so typos surface in
+                # Validate mode rather than as a runtime parse failure (typo'd type ->
+                # permanent non-compliance; typo'd comparison -> unhandled binding error).
+                # A Set value is written unless its comparison is NotExists (which deletes
+                # instead), so type is mandatory only in that case; Delete values may carry
+                # a type but don't need one. Whenever type/comparison are present they must
+                # be valid regardless of action.
+                $valueComparison = if ($value.comparison) { $value.comparison } else { 'Equals' }
+                if ($setting.action -eq 'Set' -and $valueComparison -ne 'NotExists' -and -not $value.type) {
+                    throw "Value '$($value.name)' under '$($setting.path)' requires a 'type' (one of: $($script:ValidRegistryTypes -join ', '))"
+                }
+                if ($value.type -and $value.type -notin $script:ValidRegistryTypes) {
+                    throw "Value '$($value.name)' under '$($setting.path)' has invalid type '$($value.type)' - must be one of: $($script:ValidRegistryTypes -join ', ')"
+                }
+                if ($value.comparison -and $value.comparison -notin $script:ValidComparisonOperators) {
+                    throw "Value '$($value.name)' under '$($setting.path)' has invalid comparison '$($value.comparison)' - must be one of: $($script:ValidComparisonOperators -join ', ')"
+                }
+                # Operator/type pairing: numeric range operators only make sense on
+                # DWord/QWord, and substring operators only on String/ExpandString.
+                # Without this a GreaterThan on a String would silently become a
+                # lexicographic compare. Equals/NotEquals/Exists/NotExists work on any type.
+                if ($value.type -and $value.comparison) {
+                    if ($value.comparison -in 'GreaterThan', 'GreaterThanOrEqual', 'LessThan', 'LessThanOrEqual' -and
+                        $value.type -notin 'DWord', 'QWord') {
+                        throw "Value '$($value.name)' under '$($setting.path)' uses numeric comparison '$($value.comparison)', which requires a DWord or QWord type (got '$($value.type)')"
+                    }
+                    if ($value.comparison -in 'Contains', 'StartsWith', 'EndsWith' -and
+                        $value.type -notin 'String', 'ExpandString') {
+                        throw "Value '$($value.name)' under '$($setting.path)' uses string comparison '$($value.comparison)', which requires a String or ExpandString type (got '$($value.type)')"
+                    }
+                }
+            }
+        }
+    }
+}
+
 function Get-Configuration {
     <#
     .SYNOPSIS
@@ -1371,51 +1491,11 @@ function Get-Configuration {
             throw "Configuration file not found: $Path"
         }
 
-        # Step 2: Parse + validate (shared between embedded and file paths)
+        # Step 2: Parse + validate (shared between embedded and file paths).
+        # Validation lives in Assert-ValidConfig so the package generator can reuse
+        # the exact same rules (single source of truth).
         $config = $configContent | ConvertFrom-Json
-
-        if (-not $config.settings -or $config.settings.Count -eq 0) {
-            throw "Configuration must contain at least one setting in the 'settings' array"
-        }
-
-        foreach ($setting in $config.settings) {
-            if (-not $setting.scope) {
-                throw "Each setting must have a 'scope' (Machine, User, or DefaultUser)"
-            }
-            if ($setting.scope -notin 'Machine', 'User', 'DefaultUser') {
-                throw "Invalid scope '$($setting.scope)' for path '$($setting.path)' - must be Machine, User, or DefaultUser"
-            }
-            if (-not $setting.path) {
-                throw "Each setting must have a 'path'"
-            }
-            if (-not $setting.action) {
-                # Default action is 'Set'
-                $setting | Add-Member -NotePropertyName 'action' -NotePropertyValue 'Set' -Force
-            }
-            if ($setting.action -notin 'Set', 'Delete', 'DeleteKey') {
-                throw "Invalid action '$($setting.action)' for path '$($setting.path)' - must be Set, Delete, or DeleteKey"
-            }
-            # A Set/Delete group with no values would silently do nothing —
-            # catch the typo at validation time. DeleteKey needs no values.
-            if ($setting.action -ne 'DeleteKey' -and (-not $setting.values -or @($setting.values).Count -eq 0)) {
-                throw "Setting '$($setting.path)' (action: $($setting.action)) requires a non-empty 'values' array"
-            }
-            # The registry provider treats * ? [ ] (and the backtick escape) in
-            # -Path/-Name as wildcards, so such names would silently match
-            # nothing at detect/remediate time. Reject them loudly here until
-            # the engine uses literal registry APIs throughout (see Future
-            # Enhancements in README.md).
-            if ($setting.path -match '[*?\[\]`]') {
-                throw "Path '$($setting.path)' contains wildcard characters (* ? [ ] or backtick), which the engine does not support"
-            }
-            if ($setting.values) {
-                foreach ($value in @($setting.values)) {
-                    if ($value.name -match '[*?\[\]`]') {
-                        throw "Value name '$($value.name)' under '$($setting.path)' contains wildcard characters (* ? [ ] or backtick), which the engine does not support"
-                    }
-                }
-            }
-        }
+        Assert-ValidConfig -Config $config
 
         Write-Log "Configuration loaded successfully: $($config.settings.Count) setting group(s)" -Level Success
         return $config
@@ -1520,72 +1600,90 @@ function Invoke-DetectionMode {
         foreach ($regPath in $registryPaths) {
             $fullPath = $regPath.Path
 
-            switch ($action.ToLower()) {
-                'set' {
-                    foreach ($value in $settingGroup.values) {
-                        # Skip detection for values marked with skipDetection (e.g., timestamps)
-                        if ($value.skipDetection -eq $true) {
-                            Write-Log "SKIPPED: $($regPath.Context) - $($value.name) (skipDetection enabled)" -Level Debug
-                            continue
-                        }
-
-                        $expandedValue = Expand-ConfigVariables -Value $value.data
-                        $comparisonOperator = if ($value.comparison) { $value.comparison } else { 'Equals' }
-                        $caseSensitive = [bool]($value.caseSensitive -eq $true)
-                        $comparison = Compare-RegistryValue -Path $fullPath -Name $value.name `
-                            -Type $value.type -ExpectedValue $expandedValue -Comparison $comparisonOperator `
-                            -CaseSensitive $caseSensitive
-
-                        if (-not $comparison.Match) {
-                            $compliant = $false
-                            $nonCompliantItems += [PSCustomObject]@{
-                                Context  = $regPath.Context
-                                Path     = $fullPath
-                                Name     = $value.name
-                                Expected = $expandedValue
-                                Current  = $comparison.Current
-                                Reason   = $comparison.Reason
+            # Isolate each path's evaluation: an unexpected throw (e.g. a value that
+            # slipped past load-time validation) marks that item non-compliant instead
+            # of aborting the whole detection with ConfigError. Mirrors the per-path
+            # try/catch in Invoke-RemediationMode.
+            try {
+                switch ($action.ToLower()) {
+                    'set' {
+                        foreach ($value in $settingGroup.values) {
+                            # Skip detection for values marked with skipDetection (e.g., timestamps)
+                            if ($value.skipDetection -eq $true) {
+                                Write-Log "SKIPPED: $($regPath.Context) - $($value.name) (skipDetection enabled)" -Level Debug
+                                continue
                             }
-                            Write-Log "NON-COMPLIANT: $($regPath.Context) - $($value.name): $($comparison.Reason)" -Level Warning
-                        }
-                        else {
-                            Write-Log "COMPLIANT: $($regPath.Context) - $($value.name)" -Level Debug
-                        }
-                    }
-                }
-                'delete' {
-                    foreach ($value in $settingGroup.values) {
-                        if (Test-Path $fullPath) {
-                            $item = Get-ItemProperty -Path $fullPath -Name $value.name -ErrorAction SilentlyContinue
-                            if ($null -ne $item -and ($item.PSObject.Properties.Name -contains $value.name)) {
+
+                            $expandedValue = Expand-ConfigVariables -Value $value.data
+                            $comparisonOperator = if ($value.comparison) { $value.comparison } else { 'Equals' }
+                            $caseSensitive = [bool]($value.caseSensitive -eq $true)
+                            $comparison = Compare-RegistryValue -Path $fullPath -Name $value.name `
+                                -Type $value.type -ExpectedValue $expandedValue -Comparison $comparisonOperator `
+                                -CaseSensitive $caseSensitive
+
+                            if (-not $comparison.Match) {
                                 $compliant = $false
                                 $nonCompliantItems += [PSCustomObject]@{
                                     Context  = $regPath.Context
                                     Path     = $fullPath
                                     Name     = $value.name
-                                    Expected = "(Deleted)"
-                                    Current  = $item.$($value.name)
-                                    Reason   = "Value exists but should be deleted"
+                                    Expected = $expandedValue
+                                    Current  = $comparison.Current
+                                    Reason   = $comparison.Reason
                                 }
-                                Write-Log "NON-COMPLIANT: $($regPath.Context) - $($value.name) exists (should be deleted)" -Level Warning
+                                Write-Log "NON-COMPLIANT: $($regPath.Context) - $($value.name): $($comparison.Reason)" -Level Warning
+                            }
+                            else {
+                                Write-Log "COMPLIANT: $($regPath.Context) - $($value.name)" -Level Debug
                             }
                         }
                     }
-                }
-                'deletekey' {
-                    if (Test-Path $fullPath) {
-                        $compliant = $false
-                        $nonCompliantItems += [PSCustomObject]@{
-                            Context  = $regPath.Context
-                            Path     = $fullPath
-                            Name     = "(Key)"
-                            Expected = "(Key Deleted)"
-                            Current  = "(Key Exists)"
-                            Reason   = "Key exists but should be deleted"
+                    'delete' {
+                        foreach ($value in $settingGroup.values) {
+                            if (Test-Path $fullPath) {
+                                $item = Get-ItemProperty -Path $fullPath -Name $value.name -ErrorAction SilentlyContinue
+                                if ($null -ne $item -and ($item.PSObject.Properties.Name -contains $value.name)) {
+                                    $compliant = $false
+                                    $nonCompliantItems += [PSCustomObject]@{
+                                        Context  = $regPath.Context
+                                        Path     = $fullPath
+                                        Name     = $value.name
+                                        Expected = "(Deleted)"
+                                        Current  = $item.$($value.name)
+                                        Reason   = "Value exists but should be deleted"
+                                    }
+                                    Write-Log "NON-COMPLIANT: $($regPath.Context) - $($value.name) exists (should be deleted)" -Level Warning
+                                }
+                            }
                         }
-                        Write-Log "NON-COMPLIANT: $($regPath.Context) - Key exists (should be deleted)" -Level Warning
+                    }
+                    'deletekey' {
+                        if (Test-Path $fullPath) {
+                            $compliant = $false
+                            $nonCompliantItems += [PSCustomObject]@{
+                                Context  = $regPath.Context
+                                Path     = $fullPath
+                                Name     = "(Key)"
+                                Expected = "(Key Deleted)"
+                                Current  = "(Key Exists)"
+                                Reason   = "Key exists but should be deleted"
+                            }
+                            Write-Log "NON-COMPLIANT: $($regPath.Context) - Key exists (should be deleted)" -Level Warning
+                        }
                     }
                 }
+            }
+            catch {
+                $compliant = $false
+                $nonCompliantItems += [PSCustomObject]@{
+                    Context  = $regPath.Context
+                    Path     = $fullPath
+                    Name     = "(error)"
+                    Expected = "(evaluable)"
+                    Current  = $null
+                    Reason   = "Error during detection: $_"
+                }
+                Write-Log "NON-COMPLIANT: $($regPath.Context) - detection error: $_" -Level Warning
             }
         }
     }
@@ -1952,11 +2050,19 @@ function Invoke-RollbackMode {
                     # Restore the original value
                     $valueKind = Get-RegistryTypeKind -Type $tx.Type
 
+                    # Re-coerce the value to its registry type. The transaction log is
+                    # JSON, so a Binary byte[] came back as a number array and a
+                    # MultiString string[] as an object array — Set-ItemProperty -Type
+                    # Binary/MultiString needs the real [byte[]]/[string[]]. Convert-
+                    # RegistryValue restores those; scalars (DWord/QWord/String) pass
+                    # through unchanged.
+                    $restoreValue = Convert-RegistryValue -Type $tx.Type -Value $tx.Value
+
                     if ($PSCmdlet.ShouldProcess("$($tx.Path)\$($tx.Name)", "Restore registry value")) {
                         if (-not (Test-Path $tx.Path)) {
                             New-Item -Path $tx.Path -Force | Out-Null
                         }
-                        Set-ItemProperty -Path $tx.Path -Name $tx.Name -Value $tx.Value -Type $valueKind
+                        Set-ItemProperty -Path $tx.Path -Name $tx.Name -Value $restoreValue -Type $valueKind
                         Write-Log "Restored: $($tx.Path)\$($tx.Name)" -Level Success
                         $rolledBack++
                     }
