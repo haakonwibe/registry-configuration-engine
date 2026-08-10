@@ -315,7 +315,7 @@ Use these placeholders in string values - they're expanded at runtime:
 | `{{USERNAME}}` | Current username | `jsmith` |
 | `{{DOMAIN}}` | Domain/workgroup | `CONTOSO` |
 | `{{OSVERSION}}` | Windows version | `10.0.22631.0` |
-| `{{ENGINEVERSION}}` | Script version | `1.2.1` |
+| `{{ENGINEVERSION}}` | Script version | `1.2.2` |
 
 > **Tip**: For values using `{{DATETIME}}`, add `"skipDetection": true` to prevent false non-compliance reports. Since the time changes each run, the value written during remediation will never match the expected value during detection.
 

@@ -136,16 +136,20 @@ function ConvertFrom-RegValue {
         }
 
         # REG_DWORD
+        # Emitted unsigned so the JSON shows the same decimal regedit does
+        # (0xffffffff -> 4294967295, not -1). The engine accepts either form and
+        # wraps to the Int32 bit pattern when writing, but a bare -1 in a config
+        # reads like a mistake and invites hand-editing.
         '^dword:([0-9a-fA-F]{8})$' {
             $result.type = 'DWord'
-            $result.data = [Convert]::ToInt32($Matches[1], 16)
+            $result.data = [Convert]::ToUInt32($Matches[1], 16)
         }
 
-        # REG_QWORD
+        # REG_QWORD - unsigned for the same reason as DWord above
         '^hex\(b\):(.+)$' {
             $result.type = 'QWord'
             $hexBytes = $Matches[1] -split ',' | ForEach-Object { [Convert]::ToByte($_.Trim(), 16) }
-            $result.data = [BitConverter]::ToInt64($hexBytes, 0)
+            $result.data = [BitConverter]::ToUInt64($hexBytes, 0)
         }
 
         # REG_BINARY
