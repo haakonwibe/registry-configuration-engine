@@ -185,6 +185,14 @@ Describe 'ConvertTo-UnsignedNumber' {
         ConvertTo-UnsignedNumber -Type 'qword' -Value (-1L) | Should -Be ([uint64]::MaxValue)
     }
 
+    It 'accepts an already-unsigned UInt32 DWord (as the provider returns it)' {
+        ConvertTo-UnsignedNumber -Type 'dword' -Value ([uint32]4294967295) | Should -Be 4294967295
+    }
+
+    It 'accepts an already-unsigned UInt64 QWord without overflowing [long]' {
+        ConvertTo-UnsignedNumber -Type 'qword' -Value ([uint64]::MaxValue) | Should -Be ([uint64]::MaxValue)
+    }
+
     It 'passes non-numeric types through' {
         ConvertTo-UnsignedNumber -Type 'string' -Value 'abc' | Should -Be 'abc'
     }
@@ -247,6 +255,45 @@ Describe 'Compare-RegistryValue' {
         }
         It 'LessThan: 100 < 200 is true' {
             (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'Version' -Type 'DWord' -ExpectedValue 200 -Comparison 'LessThan').Match | Should -Be $true
+        }
+    }
+
+    Context 'Equals on high-bit DWord/QWord' {
+        # The PowerShell registry provider returns Int32/Int64 while the high bit is
+        # clear but UInt32/UInt64 once it is set, whereas Convert-RegistryValue produces
+        # the signed bit pattern (0xFFFFFFFF -> -1). Comparing those raw never matched,
+        # so e.g. SCHANNEL's Enabled = 0xFFFFFFFF stayed non-compliant forever and
+        # Intune re-ran remediation on every cycle.
+        BeforeAll {
+            Mock Test-Path { $true } -ParameterFilter { $Path -eq 'HKLM:\Fake' }
+            Mock Get-ItemProperty { [PSCustomObject]@{ D = [uint32]4294967295 } } -ParameterFilter { $Name -eq 'D' }
+            Mock Get-ItemProperty { [PSCustomObject]@{ B = [uint32]2147483648 } } -ParameterFilter { $Name -eq 'B' }
+            Mock Get-ItemProperty { [PSCustomObject]@{ Q = [uint64]::MaxValue } }  -ParameterFilter { $Name -eq 'Q' }
+        }
+
+        It 'matches DWord 0xFFFFFFFF written as decimal 4294967295' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'D' -Type 'DWord' -ExpectedValue 4294967295).Match | Should -Be $true
+        }
+        It 'matches DWord 0xFFFFFFFF written as -1' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'D' -Type 'DWord' -ExpectedValue (-1)).Match | Should -Be $true
+        }
+        It 'still rejects a genuinely different high DWord' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'D' -Type 'DWord' -ExpectedValue 4294967294).Match | Should -Be $false
+        }
+        It 'still rejects a small DWord against a high stored value' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'D' -Type 'DWord' -ExpectedValue 0).Match | Should -Be $false
+        }
+        It 'matches at the 0x80000000 boundary' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'B' -Type 'DWord' -ExpectedValue 2147483648).Match | Should -Be $true
+        }
+        It 'NotEquals is false when the high DWord does match' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'D' -Type 'DWord' -ExpectedValue 4294967295 -Comparison 'NotEquals').Match | Should -Be $false
+        }
+        It 'matches QWord 0xFFFFFFFFFFFFFFFF written as decimal' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'Q' -Type 'QWord' -ExpectedValue ([uint64]::MaxValue)).Match | Should -Be $true
+        }
+        It 'GreaterThan on a UInt64 stored value does not overflow' {
+            (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'Q' -Type 'QWord' -ExpectedValue 100 -Comparison 'GreaterThan').Match | Should -Be $true
         }
     }
 
@@ -634,6 +681,38 @@ Describe 'ConvertFrom-RegistryExport default value' {
             $names = $cfg.settings | ForEach-Object { $_.values } | ForEach-Object { $_.name }
             $names | Should -Contain '(default)'
             $names | Should -Not -Contain ''
+        }
+        finally {
+            Remove-Item -LiteralPath $reg, $json -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'emits high-bit DWord/QWord as the unsigned decimal regedit shows, not a negative' {
+        # dword:ffffffff used to land in the JSON as -1, which reads like a bug and
+        # led users to hand-edit the file. Both forms work; the unsigned one matches
+        # what regedit displays.
+        $converter = Join-Path (Split-Path -Parent $script:EnginePath) 'ConvertFrom-RegistryExport.ps1'
+        $reg  = Join-Path $env:TEMP "rce-conv-$(Get-Random).reg"
+        $json = [System.IO.Path]::ChangeExtension($reg, '.json')
+        @(
+            'Windows Registry Editor Version 5.00',
+            '',
+            '[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Hashes\SHA256]',
+            '"Enabled"=dword:ffffffff',
+            '"Small"=dword:00000001',
+            '"Big"=hex(b):ff,ff,ff,ff,ff,ff,ff,ff'
+        ) -join "`r`n" | Set-Content -Path $reg -Encoding UTF8
+        try {
+            & $converter -Path $reg -OutputPath $json *> $null
+            $cfg = Get-Content -Path $json -Raw | ConvertFrom-Json
+            $values = @($cfg.settings | ForEach-Object { $_.values })
+
+            ($values | Where-Object { $_.name -eq 'Enabled' }).data | Should -Be 4294967295
+            ($values | Where-Object { $_.name -eq 'Small' }).data   | Should -Be 1
+            ($values | Where-Object { $_.name -eq 'Big' }).data     | Should -Be ([uint64]::MaxValue)
+
+            # ...and the engine still writes the correct bit pattern from that form
+            Convert-RegistryValue -Type 'DWord' -Value ($values | Where-Object { $_.name -eq 'Enabled' }).data | Should -Be (-1)
         }
         finally {
             Remove-Item -LiteralPath $reg, $json -Force -ErrorAction SilentlyContinue

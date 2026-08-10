@@ -1,8 +1,8 @@
 # ============================================================================
 # Registry Configuration Engine — Detect (packaged for Intune)
-# Engine version : 1.2.1
+# Engine version : 1.2.2
 # Source config  : 08-prefer-ipv4.json
-# Generated      : 2026-06-24 11:48:49 +02:00
+# Generated      : 2026-08-10 21:17:10 +02:00
 # DO NOT EDIT — regenerate via New-IntunePackage.ps1
 # ============================================================================
 <#
@@ -63,7 +63,7 @@
 .NOTES
     Author:         Haakon Wibe
     Blog:           https://alttabtowork.com
-    Version:        1.2.1
+    Version:        1.2.2
     Creation Date:  2026-01-28
 
     With thanks to the Intune community for the shared knowledge on registry
@@ -135,7 +135,7 @@ $script:__ForcedEventLog = $true
 #endregion
 
 #region Script Configuration
-$script:EngineVersion = "1.2.1"
+$script:EngineVersion = "1.2.2"
 $script:EventLogSource = "RegistryConfigEngine"
 $script:EventLogName = "Application"
 $script:LogPrefix = "[REGENGINE]"
@@ -884,6 +884,12 @@ function ConvertTo-UnsignedNumber {
         REG_DWORD/REG_QWORD are unsigned, but .NET reads them back as Int32/Int64,
         so 0xFFFFFFFF comes back as -1. Range operators must compare the unsigned
         interpretation or high values would sort below small positive ones.
+
+        Inputs arrive in either signedness: Convert-RegistryValue hands over the
+        signed bit pattern it writes to the registry, while the PowerShell registry
+        provider returns Int32/Int64 only while the high bit is clear and switches
+        to UInt32/UInt64 once it is set. Both normalize to the same unsigned number
+        here.
     #>
     [CmdletBinding()]
     param(
@@ -898,6 +904,10 @@ function ConvertTo-UnsignedNumber {
             return $signed
         }
         'qword' {
+            # A UInt64 above Int64.MaxValue cannot be cast to [long] - that is
+            # exactly the range this function exists to normalize, so it must be
+            # passed through rather than overflowed.
+            if ($Value -is [uint64]) { return $Value }
             return [BitConverter]::ToUInt64([BitConverter]::GetBytes([long]$Value), 0)
         }
         default { return $Value }
@@ -1019,6 +1029,16 @@ function Compare-RegistryValue {
                 elseif ($Type.ToLower() -in 'string', 'expandstring') {
                     $match = & $stringsEqual $actualValue $convertedExpected
                 }
+                # DWord/QWord: compare the unsigned interpretation of both sides.
+                # The expected value is the signed bit pattern (0xFFFFFFFF -> -1)
+                # while the provider returns UInt32/UInt64 once the high bit is
+                # set, so a raw -eq compares -1 against 4294967295 and never
+                # matches - leaving the value permanently non-compliant.
+                elseif ($Type.ToLower() -in 'dword', 'qword') {
+                    $actualUnsigned = ConvertTo-UnsignedNumber -Type $Type -Value $actualValue
+                    $expectedUnsigned = ConvertTo-UnsignedNumber -Type $Type -Value $convertedExpected
+                    $match = $actualUnsigned -eq $expectedUnsigned
+                }
                 else {
                     $match = $actualValue -eq $convertedExpected
                 }
@@ -1043,6 +1063,13 @@ function Compare-RegistryValue {
                 }
                 elseif ($Type.ToLower() -in 'string', 'expandstring') {
                     $match = -not (& $stringsEqual $actualValue $convertedExpected)
+                }
+                # See the Equals branch: both sides must be normalized to unsigned
+                # or a high-bit DWord/QWord always reports as differing.
+                elseif ($Type.ToLower() -in 'dword', 'qword') {
+                    $actualUnsigned = ConvertTo-UnsignedNumber -Type $Type -Value $actualValue
+                    $expectedUnsigned = ConvertTo-UnsignedNumber -Type $Type -Value $convertedExpected
+                    $match = $actualUnsigned -ne $expectedUnsigned
                 }
                 else {
                     $match = $actualValue -ne $convertedExpected
