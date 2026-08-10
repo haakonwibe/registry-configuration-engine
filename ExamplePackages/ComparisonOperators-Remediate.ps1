@@ -2,7 +2,7 @@
 # Registry Configuration Engine — Remediate (packaged for Intune)
 # Engine version : 1.2.2
 # Source config  : 09-comparison-operators.json
-# Generated      : 2026-08-10 21:17:10 +02:00
+# Generated      : 2026-08-10 22:24:01 +02:00
 # DO NOT EDIT — regenerate via New-IntunePackage.ps1
 # ============================================================================
 <#
@@ -1078,6 +1078,20 @@ function Compare-RegistryValue {
             }
         }
 
+        # Normalize the numeric types once, and use the normalized pair for both the
+        # comparison and the reason string - otherwise the message mixes the two
+        # representations and reads "Value 4294967295 >= -1". Non-numeric types are
+        # bound to the raw values: ConvertTo-UnsignedNumber is a pass-through for
+        # them, and calling it on a Binary byte[] would unroll the array.
+        if ($Type.ToLower() -in 'dword', 'qword') {
+            $actualNumeric   = ConvertTo-UnsignedNumber -Type $Type -Value $actualValue
+            $expectedNumeric = ConvertTo-UnsignedNumber -Type $Type -Value $convertedExpected
+        }
+        else {
+            $actualNumeric   = $actualValue
+            $expectedNumeric = $convertedExpected
+        }
+
         switch ($Comparison) {
             'Equals' {
                 # Handle binary comparison (always byte-exact, order-sensitive)
@@ -1108,9 +1122,7 @@ function Compare-RegistryValue {
                 # set, so a raw -eq compares -1 against 4294967295 and never
                 # matches - leaving the value permanently non-compliant.
                 elseif ($Type.ToLower() -in 'dword', 'qword') {
-                    $actualUnsigned = ConvertTo-UnsignedNumber -Type $Type -Value $actualValue
-                    $expectedUnsigned = ConvertTo-UnsignedNumber -Type $Type -Value $convertedExpected
-                    $match = $actualUnsigned -eq $expectedUnsigned
+                    $match = $actualNumeric -eq $expectedNumeric
                 }
                 else {
                     $match = $actualValue -eq $convertedExpected
@@ -1140,9 +1152,7 @@ function Compare-RegistryValue {
                 # See the Equals branch: both sides must be normalized to unsigned
                 # or a high-bit DWord/QWord always reports as differing.
                 elseif ($Type.ToLower() -in 'dword', 'qword') {
-                    $actualUnsigned = ConvertTo-UnsignedNumber -Type $Type -Value $actualValue
-                    $expectedUnsigned = ConvertTo-UnsignedNumber -Type $Type -Value $convertedExpected
-                    $match = $actualUnsigned -ne $expectedUnsigned
+                    $match = $actualNumeric -ne $expectedNumeric
                 }
                 else {
                     $match = $actualValue -ne $convertedExpected
@@ -1150,20 +1160,20 @@ function Compare-RegistryValue {
                 $reason = if ($match) { "Values differ (as expected)" } else { "Values match (should differ)" }
             }
             'GreaterThan' {
-                $match = (ConvertTo-UnsignedNumber -Type $Type -Value $actualValue) -gt (ConvertTo-UnsignedNumber -Type $Type -Value $convertedExpected)
-                $reason = if ($match) { "Value $actualValue > $convertedExpected" } else { "Value $actualValue is not > $convertedExpected" }
+                $match = $actualNumeric -gt $expectedNumeric
+                $reason = if ($match) { "Value $actualNumeric > $expectedNumeric" } else { "Value $actualNumeric is not > $expectedNumeric" }
             }
             'GreaterThanOrEqual' {
-                $match = (ConvertTo-UnsignedNumber -Type $Type -Value $actualValue) -ge (ConvertTo-UnsignedNumber -Type $Type -Value $convertedExpected)
-                $reason = if ($match) { "Value $actualValue >= $convertedExpected" } else { "Value $actualValue is not >= $convertedExpected" }
+                $match = $actualNumeric -ge $expectedNumeric
+                $reason = if ($match) { "Value $actualNumeric >= $expectedNumeric" } else { "Value $actualNumeric is not >= $expectedNumeric" }
             }
             'LessThan' {
-                $match = (ConvertTo-UnsignedNumber -Type $Type -Value $actualValue) -lt (ConvertTo-UnsignedNumber -Type $Type -Value $convertedExpected)
-                $reason = if ($match) { "Value $actualValue < $convertedExpected" } else { "Value $actualValue is not < $convertedExpected" }
+                $match = $actualNumeric -lt $expectedNumeric
+                $reason = if ($match) { "Value $actualNumeric < $expectedNumeric" } else { "Value $actualNumeric is not < $expectedNumeric" }
             }
             'LessThanOrEqual' {
-                $match = (ConvertTo-UnsignedNumber -Type $Type -Value $actualValue) -le (ConvertTo-UnsignedNumber -Type $Type -Value $convertedExpected)
-                $reason = if ($match) { "Value $actualValue <= $convertedExpected" } else { "Value $actualValue is not <= $convertedExpected" }
+                $match = $actualNumeric -le $expectedNumeric
+                $reason = if ($match) { "Value $actualNumeric <= $expectedNumeric" } else { "Value $actualNumeric is not <= $expectedNumeric" }
             }
             'Contains' {
                 # String methods, not -like: expected data may legitimately

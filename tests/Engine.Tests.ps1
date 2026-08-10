@@ -361,6 +361,14 @@ Describe 'Compare-RegistryValue' {
         It '0xFFFFFFFF is not LessThanOrEqual 100' {
             (Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'Sentinel' -Type 'DWord' -ExpectedValue 100 -Comparison 'LessThanOrEqual').Match | Should -Be $false
         }
+        It 'reports both operands in the same representation (not "4294967295 >= -1")' {
+            # The reason string is what lands in the log and Event Log, so it must not
+            # mix the unsigned read-back with the signed bit pattern of the expectation.
+            $r = Compare-RegistryValue -Path 'HKLM:\Fake' -Name 'Sentinel' -Type 'DWord' -ExpectedValue 4294967295 -Comparison 'GreaterThanOrEqual'
+            $r.Match  | Should -Be $true
+            $r.Reason | Should -Be 'Value 4294967295 >= 4294967295'
+            $r.Reason | Should -Not -Match '-1'
+        }
     }
 
     Context 'MultiString equality honors CaseSensitive' {
