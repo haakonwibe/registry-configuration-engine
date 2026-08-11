@@ -510,6 +510,33 @@ Describe 'Assert-ValidConfig (shared validator)' {
     }
 }
 
+Describe 'Fatal error output' {
+    # The top-level catch calls exit, so the engine has to be run as a child
+    # process here rather than dot-sourced.
+
+    BeforeEach {
+        $script:TmpConfig = Join-Path $env:TEMP "rce-fatal-$(Get-Random).json"
+        '{"version":"1.0","settings":[{"scope":"Banana","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":1}]}]}' |
+            Set-Content -Path $script:TmpConfig -Encoding UTF8
+    }
+
+    AfterEach {
+        Remove-Item -LiteralPath $script:TmpConfig -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'tags each line once (regression: the prefix was printed twice)' {
+        $out = & powershell.exe -NoProfile -File $script:EnginePath -ConfigPath $script:TmpConfig -Mode Validate 2>&1 | Out-String
+        $out | Should -Match 'ERROR'
+        # No single line may carry the prefix more than once
+        $out | Should -Not -Match "(?m)^.*\[REGENGINE\].*\[REGENGINE\].*$"
+    }
+
+    It 'still reports the reason and the ConfigError exit code' {
+        & powershell.exe -NoProfile -File $script:EnginePath -ConfigPath $script:TmpConfig -Mode Validate *>$null
+        $LASTEXITCODE | Should -Be 3
+    }
+}
+
 Describe 'Get-Configuration validation' {
 
     BeforeEach {

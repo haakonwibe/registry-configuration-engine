@@ -2,7 +2,7 @@
 # Registry Configuration Engine — Detect (packaged for Intune)
 # Engine version : 1.2.3
 # Source config  : 08-prefer-ipv4.json
-# Generated      : 2026-08-11 15:57:10 +02:00
+# Generated      : 2026-08-11 16:59:25 +02:00
 # DO NOT EDIT — regenerate via New-IntunePackage.ps1
 # ============================================================================
 <#
@@ -2254,9 +2254,13 @@ try {
     }
 }
 catch {
-    $errorMessage = "$script:LogPrefix [$script:ConfigIdentifier] ERROR - $_"
-    Write-Log $errorMessage -Level Error -EventId 9999
-    Write-Output $errorMessage
+    # Write-Log applies its own "$script:LogPrefix [$script:ConfigIdentifier]" tag and
+    # an [ERROR] level marker, so it gets the bare reason - passing the pre-tagged
+    # string printed the prefix twice. Only the Write-Output line is tagged by hand:
+    # that one is the Intune-visible stdout and has no level marker of its own,
+    # matching the tagged form of the VALIDATION OK / detection result lines.
+    Write-Log "$_" -Level Error -EventId 9999
+    Write-Output "$script:LogPrefix [$script:ConfigIdentifier] ERROR - $_"
     exit $script:ExitCodes.ConfigError
 }
 
