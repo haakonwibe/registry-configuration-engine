@@ -545,6 +545,16 @@ Describe 'Assert-ValidConfig (shared validator)' {
                 { Assert-ValidConfig -Config $cfg -WarningAction SilentlyContinue } | Should -Not -Throw
             }
 
+            It 'ignores caseSensitive on types that never read it' {
+                $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":1,"caseSensitive":true},{"name":"V","type":"DWord","data":1,"caseSensitive":false}]}]}' | ConvertFrom-Json
+                { Assert-ValidConfig -Config $cfg -WarningAction SilentlyContinue } | Should -Not -Throw
+            }
+
+            It 'still honours caseSensitive on string types, which do read it' {
+                $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"String","data":"a","caseSensitive":true},{"name":"V","type":"String","data":"a","caseSensitive":false}]}]}' | ConvertFrom-Json
+                { Assert-ValidConfig -Config $cfg } | Should -Throw "*declared more than once*"
+            }
+
             It 'rejects values differing only by a collation-ignorable character' {
                 # 'ab' vs 'a<soft hyphen>b' are different registry writes, but
                 # PowerShell's -ceq calls them equal because linguistic collation

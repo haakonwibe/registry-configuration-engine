@@ -56,7 +56,7 @@
 .NOTES
     Author:         Haakon Wibe
     Blog:           https://alttabtowork.com
-    Version:        1.2.3
+    Version:        1.2.4
     Creation Date:  2026-01-28
 
     With thanks to the Intune community for the shared knowledge on registry
@@ -96,7 +96,7 @@ $script:__ForcedEventLog = $false
 #endregion
 
 #region Script Configuration
-$script:EngineVersion = "1.2.3"
+$script:EngineVersion = "1.2.4"
 $script:EventLogSource = "RegistryConfigEngine"
 $script:EventLogName = "Application"
 $script:LogPrefix = "[REGENGINE]"
@@ -1299,13 +1299,21 @@ function Get-ValueSignature {
         $dataKey = ConvertTo-Json -InputObject $Value.data -Compress -Depth 10
     }
 
+    # caseSensitive only reaches the String/ExpandString/MultiString comparisons.
+    # On the other types it is inert, so letting it differ would report a conflict
+    # between two entries that behave identically.
+    $caseSensitive = if ($Value.type -in 'String', 'ExpandString', 'MultiString') {
+        [bool]$Value.caseSensitive
+    }
+    else { $false }
+
     # Callers compare signatures case-sensitively, which is what keeps 'Hello' and
     # 'hello' distinct: remediation writes the string literally.
     return @(
         "type=$($Value.type)".ToLower()
         "comparison=$comparison".ToLower()
         "skipDetection=$([bool]$Value.skipDetection)"
-        "caseSensitive=$([bool]$Value.caseSensitive)"
+        "caseSensitive=$caseSensitive"
         "data=$dataKey"
     ) -join '|'
 }
