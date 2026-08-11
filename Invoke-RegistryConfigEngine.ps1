@@ -2215,9 +2215,13 @@ try {
     }
 }
 catch {
-    $errorMessage = "$script:LogPrefix [$script:ConfigIdentifier] ERROR - $_"
-    Write-Log $errorMessage -Level Error -EventId 9999
-    Write-Output $errorMessage
+    # Write-Log applies its own "$script:LogPrefix [$script:ConfigIdentifier]" tag and
+    # an [ERROR] level marker, so it gets the bare reason - passing the pre-tagged
+    # string printed the prefix twice. Only the Write-Output line is tagged by hand:
+    # that one is the Intune-visible stdout and has no level marker of its own,
+    # matching the tagged form of the VALIDATION OK / detection result lines.
+    Write-Log "$_" -Level Error -EventId 9999
+    Write-Output "$script:LogPrefix [$script:ConfigIdentifier] ERROR - $_"
     exit $script:ExitCodes.ConfigError
 }
 
