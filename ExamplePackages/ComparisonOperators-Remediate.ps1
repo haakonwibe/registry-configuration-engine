@@ -2,7 +2,7 @@
 # Registry Configuration Engine — Remediate (packaged for Intune)
 # Engine version : 1.2.3
 # Source config  : 09-comparison-operators.json
-# Generated      : 2026-08-11 16:59:25 +02:00
+# Generated      : 2026-08-11 17:14:58 +02:00
 # DO NOT EDIT — regenerate via New-IntunePackage.ps1
 # ============================================================================
 <#
@@ -1353,6 +1353,75 @@ function Save-TransactionLog {
 
 #region Configuration Loading
 
+function Get-ValueSignature {
+    <#
+    .SYNOPSIS
+        Builds a comparable key describing what a config value instructs the engine
+        to do. Used by Assert-ValidConfig to tell a redundant duplicate from a
+        contradictory one.
+    .DESCRIPTION
+        Two entries for the same value name only conflict if they would behave
+        differently, so the signature covers exactly the behaviour-bearing fields
+        and resolves data through Convert-RegistryValue — the same converter
+        remediation uses. Without that step 4294967295, -1 and "0xffffffff" look
+        like three different DWord instructions when all three write the identical
+        value, and the author would be told their entries disagree when they do
+        not. That is not hypothetical: ConvertFrom-RegistryExport emitted -1 before
+        v1.2.2 and the unsigned decimal after, so concatenating an old converted
+        config with a new one produces exactly that pair. Pure — no registry access.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        $Value
+    )
+
+    $comparison = if ($Value.comparison) { $Value.comparison } else { 'Equals' }
+
+    # NotExists deletes the value rather than writing it, so type and data carry no
+    # instruction — two such entries are the same however they differ in those.
+    if ($comparison -eq 'NotExists') {
+        return "comparison=notexists|skipDetection=$([bool]$Value.skipDetection)"
+    }
+
+    # Malformed data falls back to the raw form: the runtime converter reports it
+    # with a far better message than a duplicate-check failure would.
+    $dataKey = $null
+    if ($Value.type) {
+        try {
+            $resolved = Convert-RegistryValue -Type $Value.type -Value $Value.data
+            $dataKey = if ($resolved -is [byte[]]) {
+                ($resolved | ForEach-Object { $_.ToString('x2') }) -join ''
+            }
+            elseif ($resolved -is [string[]]) {
+                # Length-prefix each element rather than joining on a separator:
+                # no character is guaranteed absent from a REG_MULTI_SZ element,
+                # so a separator could let two different splits collide.
+                ($resolved | ForEach-Object { "$($_.Length):$_" }) -join ''
+            }
+            else {
+                "$resolved"
+            }
+        }
+        catch {
+            $dataKey = $null
+        }
+    }
+    if ($null -eq $dataKey) {
+        $dataKey = ConvertTo-Json -InputObject $Value.data -Compress -Depth 10
+    }
+
+    # Callers compare signatures case-sensitively, which is what keeps 'Hello' and
+    # 'hello' distinct: remediation writes the string literally.
+    return @(
+        "type=$($Value.type)".ToLower()
+        "comparison=$comparison".ToLower()
+        "skipDetection=$([bool]$Value.skipDetection)"
+        "caseSensitive=$([bool]$Value.caseSensitive)"
+        "data=$dataKey"
+    ) -join '|'
+}
+
 function Assert-ValidConfig {
     <#
     .SYNOPSIS
@@ -1463,21 +1532,14 @@ function Assert-ValidConfig {
             # (case-insensitive) key comparison is the right grouping here.
             $seenValues = @{}
             foreach ($value in @($setting.values)) {
-                # Compare on the fields that decide what gets written and how it is
-                # detected, with the same defaults the engine applies, so an entry
-                # that omits an optional field still matches one that states it.
-                # Data is compared case-sensitively: remediation writes the string
-                # literally, so 'Hello' and 'hello' are not the same instruction.
-                $signature = @(
-                    "type=$($value.type)".ToLower()
-                    "comparison=$(if ($value.comparison) { $value.comparison } else { 'Equals' })".ToLower()
-                    "skipDetection=$([bool]$value.skipDetection)"
-                    "caseSensitive=$([bool]$value.caseSensitive)"
-                    "data=$(ConvertTo-Json -InputObject $value.data -Compress -Depth 10)"
-                ) -join '|'
+                $signature = Get-ValueSignature -Value $value
 
                 if ($seenValues.ContainsKey($value.name)) {
-                    if ($seenValues[$value.name] -cne $signature) {
+                    # Ordinal, not -cne: PowerShell's -ceq is case-sensitive but still
+                    # culture-sensitive, and linguistic collation treats control and
+                    # format characters as ignorable - so two signatures differing only
+                    # by such a character compare equal and a real conflict is missed.
+                    if (-not [string]::Equals($seenValues[$value.name], $signature, [System.StringComparison]::Ordinal)) {
                         throw "Value '$($value.name)' is declared more than once under '$($setting.path)' with settings that disagree. Remediation applies them in order, so the last one wins and detection can never pass - keep only the entry you want."
                     }
                     Write-Warning "Value '$($value.name)' is declared more than once under '$($setting.path)' with identical settings - the duplicate has no effect and can be removed."
