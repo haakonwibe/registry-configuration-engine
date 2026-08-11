@@ -507,6 +507,88 @@ Describe 'Assert-ValidConfig (shared validator)' {
             $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"DeleteKey"}]}' | ConvertFrom-Json
             { Assert-ValidConfig -Config $cfg } | Should -Not -Throw
         }
+
+        Context 'Entries that write the same value in different notations' {
+            # Regression: comparing raw JSON called these "disagreeing" when all of
+            # them resolve to the identical registry write. Reachable in practice -
+            # ConvertFrom-RegistryExport emitted -1 before v1.2.2 and 4294967295
+            # after, so concatenating an old converted config with a new one
+            # produces exactly this pair.
+
+            It 'treats DWord -1 and 4294967295 as the same instruction' {
+                $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":4294967295},{"name":"V","type":"DWord","data":-1}]}]}' | ConvertFrom-Json
+                { Assert-ValidConfig -Config $cfg -WarningAction SilentlyContinue } | Should -Not -Throw
+            }
+
+            It 'treats DWord 4294967295 and "0xffffffff" as the same instruction' {
+                $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":4294967295},{"name":"V","type":"DWord","data":"0xffffffff"}]}]}' | ConvertFrom-Json
+                { Assert-ValidConfig -Config $cfg -WarningAction SilentlyContinue } | Should -Not -Throw
+            }
+
+            It 'treats Binary comma-hex and continuous-hex as the same instruction' {
+                $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"Binary","data":"3C,00,00,00"},{"name":"V","type":"Binary","data":"3C000000"}]}]}' | ConvertFrom-Json
+                { Assert-ValidConfig -Config $cfg -WarningAction SilentlyContinue } | Should -Not -Throw
+            }
+
+            It 'still rejects Binary values that differ in byte order' {
+                $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"Binary","data":"3C,00,00,00"},{"name":"V","type":"Binary","data":"00,3C,00,00"}]}]}' | ConvertFrom-Json
+                { Assert-ValidConfig -Config $cfg } | Should -Throw "*declared more than once*"
+            }
+
+            It 'still rejects a genuine numeric disagreement' {
+                $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":4294967295},{"name":"V","type":"DWord","data":4294967294}]}]}' | ConvertFrom-Json
+                { Assert-ValidConfig -Config $cfg } | Should -Throw "*declared more than once*"
+            }
+
+            It 'ignores type and data for NotExists, which deletes rather than writes' {
+                $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":1,"comparison":"NotExists"},{"name":"V","comparison":"NotExists"}]}]}' | ConvertFrom-Json
+                { Assert-ValidConfig -Config $cfg -WarningAction SilentlyContinue } | Should -Not -Throw
+            }
+
+            It 'rejects values differing only by a collation-ignorable character' {
+                # 'ab' vs 'a<soft hyphen>b' are different registry writes, but
+                # PowerShell's -ceq calls them equal because linguistic collation
+                # ignores the character - the comparison has to be ordinal.
+                $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"String","data":"ab"},{"name":"V","type":"String","data":"a­b"}]}]}' | ConvertFrom-Json
+                { Assert-ValidConfig -Config $cfg } | Should -Throw "*declared more than once*"
+            }
+
+            It 'falls back to the raw form when data cannot be converted' {
+                # Malformed hex - the duplicate check must not turn this into a
+                # confusing conflict error; the runtime converter reports it properly.
+                $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"Binary","data":"ZZ,00"},{"name":"V","type":"Binary","data":"ZZ,00"}]}]}' | ConvertFrom-Json
+                { Assert-ValidConfig -Config $cfg -WarningAction SilentlyContinue } | Should -Not -Throw
+            }
+        }
+    }
+}
+
+Describe 'Get-ValueSignature' {
+
+    It 'produces one signature per distinct instruction, not per notation' {
+        $a = [pscustomobject]@{ name = 'V'; type = 'DWord'; data = 4294967295 }
+        $b = [pscustomobject]@{ name = 'V'; type = 'DWord'; data = -1 }
+        $c = [pscustomobject]@{ name = 'V'; type = 'DWord'; data = 0 }
+        (Get-ValueSignature -Value $a) | Should -BeExactly (Get-ValueSignature -Value $b)
+        (Get-ValueSignature -Value $a) | Should -Not -BeExactly (Get-ValueSignature -Value $c)
+    }
+
+    It 'keeps string case significant (remediation writes the literal)' {
+        $a = [pscustomobject]@{ name = 'V'; type = 'String'; data = 'Hello' }
+        $b = [pscustomobject]@{ name = 'V'; type = 'String'; data = 'hello' }
+        (Get-ValueSignature -Value $a) | Should -Not -BeExactly (Get-ValueSignature -Value $b)
+    }
+
+    It 'does not let MultiString element splits collide' {
+        $a = [pscustomobject]@{ name = 'V'; type = 'MultiString'; data = @('a', 'bc') }
+        $b = [pscustomobject]@{ name = 'V'; type = 'MultiString'; data = @('ab', 'c') }
+        (Get-ValueSignature -Value $a) | Should -Not -BeExactly (Get-ValueSignature -Value $b)
+    }
+
+    It 'applies engine defaults so an omitted optional field matches an explicit one' {
+        $a = [pscustomobject]@{ name = 'V'; type = 'DWord'; data = 1 }
+        $b = [pscustomobject]@{ name = 'V'; type = 'DWord'; data = 1; comparison = 'Equals'; skipDetection = $false }
+        (Get-ValueSignature -Value $a) | Should -BeExactly (Get-ValueSignature -Value $b)
     }
 }
 
