@@ -64,22 +64,34 @@ $savedConfigPath = $ConfigPath
 . $enginePath
 $ConfigPath = $savedConfigPath
 
-# Read + validate the config via the engine's shared validator
-$configJson = Get-Content -Path $ConfigPath -Raw -Encoding UTF8
-$config = $configJson | ConvertFrom-Json
-Assert-ValidConfig -Config $config
+# Read + validate the config via the engine's shared validator. A rejected config
+# is a user-facing outcome, not a generator bug, so report the reason on one line
+# and exit 1 — under $ErrorActionPreference = 'Stop' an uncaught throw here buries
+# the message in a CategoryInfo/FullyQualifiedErrorId stack dump. Nothing has been
+# written at this point, so there is no partial package to clean up.
+try {
+    $configJson = Get-Content -Path $ConfigPath -Raw -Encoding UTF8
+
+    # A here-string is terminated by `'@` at column 0. JSON syntax doesn't allow
+    # that on its own line, but reject it loudly if encountered rather than
+    # producing a silently-broken script.
+    if ($configJson -match "(?m)^'@") {
+        throw "Configuration JSON contains a line beginning with `'@` which would terminate the embedded here-string. Reformat the source JSON."
+    }
+
+    $config = $configJson | ConvertFrom-Json
+    Assert-ValidConfig -Config $config
+}
+catch {
+    Write-Host "Configuration rejected: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "No package files were written." -ForegroundColor Red
+    exit 1
+}
 
 # Engine source (for the INJECTION_POINT replacement) and its version. The version
 # is now available directly from the dot-sourced engine, no need to re-parse it.
 $engineSrc = Get-Content -Path $enginePath -Raw -Encoding UTF8
 $engineVersion = $script:EngineVersion
-
-# A here-string is terminated by `'@` at column 0. JSON syntax doesn't allow that
-# on its own line, but reject it loudly if encountered rather than producing a
-# silently-broken script.
-if ($configJson -match "(?m)^'@") {
-    throw "Configuration JSON contains a line beginning with `'@` which would terminate the embedded here-string. Reformat the source JSON."
-}
 
 # Set up output directory + naming
 if (-not (Test-Path -LiteralPath $OutputPath)) {

@@ -447,6 +447,67 @@ Describe 'Assert-ValidConfig (shared validator)' {
         $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":100,"comparison":"GreaterThanOrEqual"}]}]}' | ConvertFrom-Json
         { Assert-ValidConfig -Config $cfg } | Should -Not -Throw
     }
+
+    Context 'Duplicate value names in one key' {
+        # A .reg holding the same key section twice merges into one group with the
+        # name repeated. Entries that disagree can never all be satisfied, so
+        # remediation rewrites and detection re-fails forever.
+
+        It 'rejects the same name declared twice with different data' {
+            $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SYSTEM\\...\\Hashes\\MD5","action":"Set","values":[{"name":"Enabled","type":"DWord","data":4294967295},{"name":"Enabled","type":"DWord","data":0}]}]}' | ConvertFrom-Json
+            { Assert-ValidConfig -Config $cfg } | Should -Throw "*declared more than once*"
+        }
+
+        It 'matches names case-insensitively, as the registry does' {
+            $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"Enabled","type":"DWord","data":1},{"name":"enabled","type":"DWord","data":0}]}]}' | ConvertFrom-Json
+            { Assert-ValidConfig -Config $cfg } | Should -Throw "*declared more than once*"
+        }
+
+        It 'rejects a duplicate that differs only by type' {
+            $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":1},{"name":"V","type":"String","data":1}]}]}' | ConvertFrom-Json
+            { Assert-ValidConfig -Config $cfg } | Should -Throw "*declared more than once*"
+        }
+
+        It 'rejects a duplicate that differs only by comparison' {
+            $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":1},{"name":"V","type":"DWord","data":1,"comparison":"NotExists"}]}]}' | ConvertFrom-Json
+            { Assert-ValidConfig -Config $cfg } | Should -Throw "*declared more than once*"
+        }
+
+        It 'warns but accepts an identical duplicate (redundant, not unsatisfiable)' {
+            $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":1},{"name":"V","type":"DWord","data":1}]}]}' | ConvertFrom-Json
+            { Assert-ValidConfig -Config $cfg -WarningAction SilentlyContinue } | Should -Not -Throw
+            $w = $null
+            Assert-ValidConfig -Config $cfg -WarningVariable w -WarningAction SilentlyContinue
+            $w.Count | Should -Be 1
+            "$w" | Should -Match 'no effect'
+        }
+
+        It 'treats an omitted optional field as its default when matching' {
+            # comparison defaults to Equals, so stating it explicitly is the same entry
+            $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"DWord","data":1},{"name":"V","type":"DWord","data":1,"comparison":"Equals","skipDetection":false}]}]}' | ConvertFrom-Json
+            { Assert-ValidConfig -Config $cfg -WarningAction SilentlyContinue } | Should -Not -Throw
+        }
+
+        It 'compares string data case-sensitively (different literal, different write)' {
+            $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"String","data":"Hello"},{"name":"V","type":"String","data":"hello"}]}]}' | ConvertFrom-Json
+            { Assert-ValidConfig -Config $cfg } | Should -Throw "*declared more than once*"
+        }
+
+        It 'allows the same name under two different keys' {
+            $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\A","action":"Set","values":[{"name":"Enabled","type":"DWord","data":1}]},{"scope":"Machine","path":"SOFTWARE\\B","action":"Set","values":[{"name":"Enabled","type":"DWord","data":0}]}]}' | ConvertFrom-Json
+            { Assert-ValidConfig -Config $cfg } | Should -Not -Throw
+        }
+
+        It 'handles MultiString array data without tripping over the array' {
+            $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"Set","values":[{"name":"V","type":"MultiString","data":["a","b"]},{"name":"V","type":"MultiString","data":["a","c"]}]}]}' | ConvertFrom-Json
+            { Assert-ValidConfig -Config $cfg } | Should -Throw "*declared more than once*"
+        }
+
+        It 'allows a DeleteKey group, which carries no values at all' {
+            $cfg = '{"version":"1.0","settings":[{"scope":"Machine","path":"SOFTWARE\\X","action":"DeleteKey"}]}' | ConvertFrom-Json
+            { Assert-ValidConfig -Config $cfg } | Should -Not -Throw
+        }
+    }
 }
 
 Describe 'Get-Configuration validation' {

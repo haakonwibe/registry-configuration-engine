@@ -1,8 +1,8 @@
 # ============================================================================
 # Registry Configuration Engine — Remediate (packaged for Intune)
-# Engine version : 1.2.2
+# Engine version : 1.2.3
 # Source config  : 09-comparison-operators.json
-# Generated      : 2026-08-10 22:24:01 +02:00
+# Generated      : 2026-08-11 15:57:10 +02:00
 # DO NOT EDIT — regenerate via New-IntunePackage.ps1
 # ============================================================================
 <#
@@ -63,7 +63,7 @@
 .NOTES
     Author:         Haakon Wibe
     Blog:           https://alttabtowork.com
-    Version:        1.2.2
+    Version:        1.2.3
     Creation Date:  2026-01-28
 
     With thanks to the Intune community for the shared knowledge on registry
@@ -208,7 +208,7 @@ $script:__ForcedEventLog = $true
 #endregion
 
 #region Script Configuration
-$script:EngineVersion = "1.2.2"
+$script:EngineVersion = "1.2.3"
 $script:EventLogSource = "RegistryConfigEngine"
 $script:EventLogName = "Application"
 $script:LogPrefix = "[REGENGINE]"
@@ -1364,6 +1364,9 @@ function Assert-ValidConfig {
         and calls this). The canonical enums live in $script:ValidRegistryTypes /
         $script:ValidComparisonOperators. Mutates each setting to add a default
         action='Set' when absent, matching what the detect/remediate code expects.
+        Problems that make a config unsatisfiable throw; problems that only make it
+        redundant emit a warning (Write-Warning, not Write-Log, so the function stays
+        usable by the package generator without pulling in the logging setup).
     #>
     [CmdletBinding()]
     param(
@@ -1447,6 +1450,40 @@ function Assert-ValidConfig {
                         $value.type -notin 'String', 'ExpandString') {
                         throw "Value '$($value.name)' under '$($setting.path)' uses string comparison '$($value.comparison)', which requires a String or ExpandString type (got '$($value.type)')"
                     }
+                }
+            }
+
+            # A name listed twice in the same key is either redundant (identical
+            # entries) or unsatisfiable (entries that disagree). Remediation writes
+            # them in order so the last one wins, and detection then fails on the
+            # earlier one on every run - a remediation loop that never converges,
+            # which is exactly what a .reg file holding the same key section twice
+            # produces once ConvertFrom-RegistryExport merges it into one group.
+            # Registry value names are case-insensitive, so a hashtable's default
+            # (case-insensitive) key comparison is the right grouping here.
+            $seenValues = @{}
+            foreach ($value in @($setting.values)) {
+                # Compare on the fields that decide what gets written and how it is
+                # detected, with the same defaults the engine applies, so an entry
+                # that omits an optional field still matches one that states it.
+                # Data is compared case-sensitively: remediation writes the string
+                # literally, so 'Hello' and 'hello' are not the same instruction.
+                $signature = @(
+                    "type=$($value.type)".ToLower()
+                    "comparison=$(if ($value.comparison) { $value.comparison } else { 'Equals' })".ToLower()
+                    "skipDetection=$([bool]$value.skipDetection)"
+                    "caseSensitive=$([bool]$value.caseSensitive)"
+                    "data=$(ConvertTo-Json -InputObject $value.data -Compress -Depth 10)"
+                ) -join '|'
+
+                if ($seenValues.ContainsKey($value.name)) {
+                    if ($seenValues[$value.name] -cne $signature) {
+                        throw "Value '$($value.name)' is declared more than once under '$($setting.path)' with settings that disagree. Remediation applies them in order, so the last one wins and detection can never pass - keep only the entry you want."
+                    }
+                    Write-Warning "Value '$($value.name)' is declared more than once under '$($setting.path)' with identical settings - the duplicate has no effect and can be removed."
+                }
+                else {
+                    $seenValues[$value.name] = $signature
                 }
             }
         }
