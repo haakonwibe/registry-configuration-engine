@@ -1,0 +1,30 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Prefer IPv4 over IPv6 - Required for Microsoft Global Secure Access",
+  "created": "2026-01-28",
+  "notes": [
+    "Sets DisabledComponents to 0x20 (32) which prefers IPv4 over IPv6",
+    "This is recommended for Global Secure Access (Entra Private Access / Internet Access)",
+    "Reference: https://learn.microsoft.com/en-us/entra/global-secure-access/",
+    "A reboot may be required for changes to take effect"
+  ],
+  "settings": [
+    {
+      "name": "Prefer IPv4 over IPv6",
+      "description": "Configure Windows to prefer IPv4 connections over IPv6",
+      "scope": "Machine",
+      "path": "SYSTEM\\CurrentControlSet\\Services\\Tcpip6\\Parameters",
+      "action": "Set",
+      "rebootRequired": true,
+      "values": [
+        {
+          "name": "DisabledComponents",
+          "type": "DWord",
+          "data": 32
+        }
+      ]
+    }
+  ]
+}

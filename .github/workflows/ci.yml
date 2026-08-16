@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Lint and test (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Pester and PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name Pester -MinimumVersion 5.5.0 -Force -SkipPublisherCheck
+          Install-Module -Name PSScriptAnalyzer -Force -SkipPublisherCheck
+
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $paths = @(
+            'Invoke-RegistryConfigEngine.ps1',
+            'New-IntunePackage.ps1',
+            'ConvertFrom-RegistryExport.ps1',
+            'tests/Engine.Tests.ps1'
+          )
+          $findings = @()
+          foreach ($p in $paths) {
+            $findings += Invoke-ScriptAnalyzer -Path $p -Settings ./PSScriptAnalyzerSettings.psd1
+          }
+          if ($findings) {
+            $findings | Format-Table -AutoSize -Wrap | Out-String | Write-Host
+            $errors = $findings | Where-Object Severity -eq 'Error'
+            if ($errors) {
+              Write-Error "PSScriptAnalyzer reported errors."
+              exit 1
+            }
+            Write-Warning "PSScriptAnalyzer reported $($findings.Count) warning(s)."
+          } else {
+            Write-Host "PSScriptAnalyzer: clean."
+          }
+
+      - name: Run Pester tests
+        shell: pwsh
+        run: |
+          Import-Module Pester -MinimumVersion 5.0 -Force
+          $config = New-PesterConfiguration
+          $config.Run.Path = './tests'
+          $config.Run.PassThru = $true
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputFormat = 'NUnitXml'
+          $config.TestResult.OutputPath = 'TestResults.xml'
+          Invoke-Pester -Configuration $config
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pester-results
+          path: TestResults.xml
+
+      - name: Smoke test the engine + generator
+        shell: pwsh
+        run: |
+          # Validate every shipped config
+          Get-ChildItem ./Configs/*.json | ForEach-Object {
+            ./Invoke-RegistryConfigEngine.ps1 -ConfigPath $_.FullName -Mode Validate
+            if ($LASTEXITCODE -ne 0) { Write-Error "Validate failed: $($_.Name)"; exit 1 }
+          }
+
+          # Generate packages for a representative spread of value types (binary,
+          # multistring/comparison operators, plain DWord) and verify each parses.
+          $tmp = Join-Path $env:RUNNER_TEMP 'pkg-test'
+          New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+          $cases = @{
+            'CIBaseline'    = './Configs/08-prefer-ipv4.json'
+            'CIBinary'      = './Configs/02-outlook-fonts.json'
+            'CIComparison'  = './Configs/09-comparison-operators.json'
+          }
+          foreach ($prefix in $cases.Keys) {
+            ./New-IntunePackage.ps1 -ConfigPath $cases[$prefix] -OutputPath $tmp -Prefix $prefix
+            foreach ($suffix in 'Detect', 'Remediate') {
+              $errors = $null
+              [void][System.Management.Automation.Language.Parser]::ParseFile("$tmp/$prefix-$suffix.ps1", [ref]$null, [ref]$errors)
+              if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+            }
+          }
+          Write-Host 'All configs validate and generated scripts parse cleanly.'

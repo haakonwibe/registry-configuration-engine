@@ -1,0 +1,79 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Cleanup configuration - demonstrates Delete and DeleteKey actions for removing legacy settings",
+  "created": "2026-01-28",
+  "notes": [
+    "Use 'Delete' action to remove specific registry values.",
+    "Use 'DeleteKey' action to remove entire registry keys and all their contents.",
+    "This is useful for cleaning up after app uninstalls or removing legacy configurations.",
+    "Transaction logs enable rollback if needed (though DeleteKey has limited rollback)."
+  ],
+  "settings": [
+    {
+      "name": "Remove Legacy App Settings",
+      "description": "Clean up registry values left by uninstalled application",
+      "scope": "User",
+      "path": "SOFTWARE\\LegacyCompany\\OldApp",
+      "action": "Delete",
+      "values": [
+        {
+          "name": "LicenseKey",
+          "type": "String"
+        },
+        {
+          "name": "InstallDate",
+          "type": "String"
+        },
+        {
+          "name": "UserPreferences",
+          "type": "Binary"
+        }
+      ]
+    },
+    {
+      "name": "Remove Legacy App Key Entirely",
+      "description": "Delete the entire registry key for the old application",
+      "scope": "User",
+      "path": "SOFTWARE\\LegacyCompany\\OldApp",
+      "action": "DeleteKey"
+    },
+    {
+      "name": "Remove Unwanted Browser Extensions Registry",
+      "description": "Clean up extension policies that are no longer needed",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallBlocklist",
+      "action": "Delete",
+      "values": [
+        {
+          "name": "1"
+        },
+        {
+          "name": "2"
+        }
+      ]
+    },
+    {
+      "name": "Remove Old Corporate Branding",
+      "description": "Clean up previous corporate config before applying new",
+      "scope": "User",
+      "path": "SOFTWARE\\OldCompanyName\\Settings",
+      "action": "DeleteKey"
+    },
+    {
+      "name": "Remove Legacy Machine Settings",
+      "description": "Clean up machine-wide legacy configuration",
+      "scope": "Machine",
+      "path": "SOFTWARE\\OldCompanyName",
+      "action": "DeleteKey"
+    },
+    {
+      "name": "Clean Default User Legacy Settings",
+      "description": "Remove legacy settings from Default User profile",
+      "scope": "DefaultUser",
+      "path": "SOFTWARE\\LegacyCompany",
+      "action": "DeleteKey"
+    }
+  ]
+}

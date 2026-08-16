@@ -1,0 +1,185 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Microsoft Entra Global Secure Access - Production configuration with restricted client control",
+  "created": "2026-01-29",
+  "notes": [
+    "Reference: https://learn.microsoft.com/en-us/entra/global-secure-access/how-to-install-windows-client",
+    "Configures GSA client behavior, restricts non-privileged users, and hides tray menu buttons.",
+    "Disables QUIC protocol and DNS-over-HTTPS for Edge, Chrome, and Firefox to ensure traffic flows through GSA.",
+    "IPv4 preference (DisabledComponents=0x20) is recommended for GSA compatibility.",
+    "Reboot may be required for IPv4 and some browser policy changes to take effect."
+  ],
+  "settings": [
+    {
+      "name": "Prefer IPv4 over IPv6",
+      "description": "Required for Global Secure Access - ensures IPv4 is preferred over IPv6",
+      "scope": "Machine",
+      "path": "SYSTEM\\CurrentControlSet\\Services\\Tcpip6\\Parameters",
+      "action": "Set",
+      "rebootRequired": true,
+      "values": [
+        {
+          "name": "DisabledComponents",
+          "type": "DWord",
+          "data": 32
+        }
+      ]
+    },
+    {
+      "name": "GSA Client - Restrict Non-Privileged Users",
+      "description": "Prevent standard users from disabling the GSA client without admin approval",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Microsoft\\Global Secure Access Client",
+      "action": "Set",
+      "values": [
+        {
+          "name": "RestrictNonPrivilegedUsers",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "GSA Client - Hide Sign Out Button",
+      "description": "Hide the Sign Out option from the system tray menu",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Microsoft\\Global Secure Access Client",
+      "action": "Set",
+      "values": [
+        {
+          "name": "HideSignOutButton",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "GSA Client - Hide Disable Private Access Button",
+      "description": "Hide the Disable Private Access option from the system tray menu",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Microsoft\\Global Secure Access Client",
+      "action": "Set",
+      "values": [
+        {
+          "name": "HideDisablePrivateAccessButton",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "GSA Client - Hide Disable Button",
+      "description": "Hide the Disable option from the system tray menu",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Microsoft\\Global Secure Access Client",
+      "action": "Set",
+      "values": [
+        {
+          "name": "HideDisableButton",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "Microsoft Edge - Disable QUIC Protocol",
+      "description": "Disable QUIC/HTTP3 in Edge to ensure traffic flows through GSA tunnel",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Edge",
+      "action": "Set",
+      "values": [
+        {
+          "name": "QuicAllowed",
+          "type": "DWord",
+          "data": 0
+        }
+      ]
+    },
+    {
+      "name": "Microsoft Edge - Disable DNS-over-HTTPS",
+      "description": "Disable DoH in Edge to ensure DNS queries flow through GSA",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Edge",
+      "action": "Set",
+      "values": [
+        {
+          "name": "DnsOverHttpsMode",
+          "type": "String",
+          "data": "off"
+        }
+      ]
+    },
+    {
+      "name": "Google Chrome - Disable QUIC Protocol",
+      "description": "Disable QUIC/HTTP3 in Chrome to ensure traffic flows through GSA tunnel",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Google\\Chrome",
+      "action": "Set",
+      "values": [
+        {
+          "name": "QuicAllowed",
+          "type": "DWord",
+          "data": 0
+        }
+      ]
+    },
+    {
+      "name": "Google Chrome - Disable DNS-over-HTTPS",
+      "description": "Disable DoH in Chrome to ensure DNS queries flow through GSA",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Google\\Chrome",
+      "action": "Set",
+      "values": [
+        {
+          "name": "DnsOverHttpsMode",
+          "type": "String",
+          "data": "off"
+        }
+      ]
+    },
+    {
+      "name": "Mozilla Firefox - Disable QUIC/HTTP3",
+      "description": "Disable QUIC/HTTP3 in Firefox via registry policy",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Mozilla\\Firefox\\Preferences",
+      "action": "Set",
+      "values": [
+        {
+          "name": "network.http.http3.enable",
+          "type": "DWord",
+          "data": 0
+        }
+      ]
+    },
+    {
+      "name": "Mozilla Firefox - Disable DNS-over-HTTPS",
+      "description": "Disable DoH (TRR mode 0) in Firefox via registry policy",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Mozilla\\Firefox\\Preferences",
+      "action": "Set",
+      "values": [
+        {
+          "name": "network.trr.mode",
+          "type": "DWord",
+          "data": 0
+        }
+      ]
+    },
+    {
+      "name": "Mozilla Firefox - Enable Policy Engine",
+      "description": "Enable Firefox Enterprise Policy support (required for registry policies to work)",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Mozilla\\Firefox",
+      "action": "Set",
+      "values": [
+        {
+          "name": "EnterprisePoliciesEnabled",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Microsoft Teams (new) enterprise configuration",
+  "created": "2026-01-28",
+  "notes": [
+    "These settings apply to the new Microsoft Teams client.",
+    "Some settings may also affect Teams classic if still present.",
+    "Most Teams policies should be managed via Teams Admin Center.",
+    "Registry settings are useful for machine-wide defaults and edge cases."
+  ],
+  "settings": [
+    {
+      "name": "Teams Auto-Start Configuration",
+      "description": "Control Teams startup behavior",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Teams",
+      "action": "Set",
+      "values": [
+        {
+          "name": "DisableAutoStart",
+          "type": "DWord",
+          "data": 0,
+          "comment": "Allow Teams to auto-start (0=allow, 1=disable)"
+        }
+      ]
+    },
+    {
+      "name": "Teams Meeting Configuration",
+      "description": "Default meeting settings",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Teams",
+      "action": "Set",
+      "values": [
+        {
+          "name": "DisableFirstRunExperience",
+          "type": "DWord",
+          "data": 1,
+          "comment": "Skip first run experience for cleaner deployment"
+        }
+      ]
+    },
+    {
+      "name": "Teams Classic Cleanup",
+      "description": "Remove Teams classic auto-start entries if present",
+      "scope": "User",
+      "path": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "action": "Delete",
+      "values": [
+        {
+          "name": "com.squirrel.Teams.Teams"
+        }
+      ]
+    },
+    {
+      "name": "Teams User Preferences",
+      "description": "User-level Teams configuration",
+      "scope": "User",
+      "path": "SOFTWARE\\Microsoft\\Teams",
+      "action": "Set",
+      "values": [
+        {
+          "name": "ConfiguredByPolicy",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    }
+  ]
+}

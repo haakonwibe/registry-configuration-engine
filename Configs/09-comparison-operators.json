@@ -1,0 +1,103 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Demonstrates comparison operators for flexible detection logic",
+  "created": "2026-01-29",
+  "notes": [
+    "Comparison operators allow flexible detection beyond exact equality.",
+    "Detection uses the specified operator; remediation writes the 'data' value only when the comparison is not already satisfied.",
+    "Exception: 'NotExists' comparison deletes the value during remediation.",
+    "Use cases: version checks, range validation, partial string matching, cleanup."
+  ],
+  "settings": [
+    {
+      "name": "Minimum Security Version",
+      "description": "Ensure security baseline version is at least 100",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Contoso\\SecurityBaseline",
+      "action": "Set",
+      "values": [
+        {
+          "name": "Version",
+          "type": "DWord",
+          "data": 100,
+          "comparison": "GreaterThanOrEqual"
+        }
+      ]
+    },
+    {
+      "name": "Homepage Contains Company Domain",
+      "description": "Verify homepage URL includes company domain",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Edge",
+      "action": "Set",
+      "values": [
+        {
+          "name": "HomepageLocation",
+          "type": "String",
+          "data": "https://portal.contoso.com",
+          "comparison": "Contains"
+        }
+      ]
+    },
+    {
+      "name": "Log Path Starts With Approved Location",
+      "description": "Ensure logs go to approved directory",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Contoso\\Logging",
+      "action": "Set",
+      "values": [
+        {
+          "name": "LogPath",
+          "type": "String",
+          "data": "C:\\ProgramData\\Contoso\\Logs",
+          "comparison": "StartsWith"
+        }
+      ]
+    },
+    {
+      "name": "Remove Legacy Debug Setting",
+      "description": "Ensure debug mode is not enabled (value should not exist)",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Contoso\\App",
+      "action": "Set",
+      "values": [
+        {
+          "name": "DebugMode",
+          "comparison": "NotExists"
+        }
+      ]
+    },
+    {
+      "name": "Verify Config Exists",
+      "description": "Check that configuration value exists (any value acceptable)",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Contoso\\App",
+      "action": "Set",
+      "values": [
+        {
+          "name": "ConfiguredBy",
+          "type": "String",
+          "data": "Intune",
+          "comparison": "Exists"
+        }
+      ]
+    },
+    {
+      "name": "Cache Size Within Limit",
+      "description": "Ensure cache size is not exceeding 1000 MB",
+      "scope": "User",
+      "path": "SOFTWARE\\Contoso\\Cache",
+      "action": "Set",
+      "values": [
+        {
+          "name": "MaxSizeMB",
+          "type": "DWord",
+          "data": 500,
+          "comparison": "LessThanOrEqual"
+        }
+      ]
+    }
+  ]
+}

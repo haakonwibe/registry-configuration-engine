@@ -1,0 +1,86 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Configure default fonts in Outlook (classic) - demonstrates binary registry value handling",
+  "created": "2026-01-28",
+  "notes": [
+    "These binary values configure Outlook's default fonts for compose, reply, and plain text.",
+    "Binary values can be specified as comma-separated hex values (e.g., '3C,00,00,00').",
+    "The values below set Segoe UI, 11pt for compose/reply and Consolas 10pt for plain text.",
+    "Outlook must be restarted for changes to take effect."
+  ],
+  "settings": [
+    {
+      "name": "Outlook Compose Font",
+      "description": "Default font for new email composition (Segoe UI, 11pt, Black)",
+      "scope": "User",
+      "path": "SOFTWARE\\Microsoft\\Office\\16.0\\Common\\MailSettings",
+      "action": "Set",
+      "values": [
+        {
+          "name": "ComposeFontComplex",
+          "type": "Binary",
+          "data": "3C,68,74,6D,6C,3E,0D,0A,0D,0A,3C,68,65,61,64,3E,0D,0A,3C,73,74,79,6C,65,3E,0D,0A,0D,0A,20,2F,2A,20,53,74,79,6C,65,20,44,65,66,69,6E,69,74,69,6F,6E,73,20,2A,2F,0D,0A,20,70,2E,4D,73,6F,4E,6F,72,6D,61,6C,2C,20,6C,69,2E,4D,73,6F,4E,6F,72,6D,61,6C,2C,20,64,69,76,2E,4D,73,6F,4E,6F,72,6D,61,6C,0D,0A,20,7B,6D,61,72,67,69,6E,3A,30,69,6E,3B,0D,0A,20,66,6F,6E,74,2D,73,69,7A,65,3A,31,31,2E,30,70,74,3B,0D,0A,20,66,6F,6E,74,2D,66,61,6D,69,6C,79,3A,22,53,65,67,6F,65,20,55,49,22,2C,73,61,6E,73,2D,73,65,72,69,66,3B,7D,0D,0A,0D,0A,3C,2F,73,74,79,6C,65,3E,0D,0A,3C,2F,68,65,61,64,3E,0D,0A,0D,0A,3C,2F,68,74,6D,6C,3E,0D,0A"
+        },
+        {
+          "name": "ComposeFontSimple",
+          "type": "Binary",
+          "data": "3C,00,00,00,00,00,00,00,BC,02,00,00,00,00,00,00,FF,FF,00,16,53,65,67,6F,65,20,55,49,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00"
+        }
+      ]
+    },
+    {
+      "name": "Outlook Reply Font",
+      "description": "Default font for reply/forward (Segoe UI, 11pt, Dark Blue)",
+      "scope": "User",
+      "path": "SOFTWARE\\Microsoft\\Office\\16.0\\Common\\MailSettings",
+      "action": "Set",
+      "values": [
+        {
+          "name": "ReplyFontComplex",
+          "type": "Binary",
+          "data": "3C,68,74,6D,6C,3E,0D,0A,0D,0A,3C,68,65,61,64,3E,0D,0A,3C,73,74,79,6C,65,3E,0D,0A,0D,0A,20,2F,2A,20,53,74,79,6C,65,20,44,65,66,69,6E,69,74,69,6F,6E,73,20,2A,2F,0D,0A,20,70,2E,4D,73,6F,4E,6F,72,6D,61,6C,2C,20,6C,69,2E,4D,73,6F,4E,6F,72,6D,61,6C,2C,20,64,69,76,2E,4D,73,6F,4E,6F,72,6D,61,6C,0D,0A,20,7B,6D,61,72,67,69,6E,3A,30,69,6E,3B,0D,0A,20,66,6F,6E,74,2D,73,69,7A,65,3A,31,31,2E,30,70,74,3B,0D,0A,20,66,6F,6E,74,2D,66,61,6D,69,6C,79,3A,22,53,65,67,6F,65,20,55,49,22,2C,73,61,6E,73,2D,73,65,72,69,66,3B,0D,0A,20,63,6F,6C,6F,72,3A,23,31,46,34,39,37,44,3B,7D,0D,0A,0D,0A,3C,2F,73,74,79,6C,65,3E,0D,0A,3C,2F,68,65,61,64,3E,0D,0A,0D,0A,3C,2F,68,74,6D,6C,3E,0D,0A"
+        },
+        {
+          "name": "ReplyFontSimple",
+          "type": "Binary",
+          "data": "3C,00,00,00,7D,49,1F,00,BC,02,00,00,00,00,00,00,FF,FF,00,16,53,65,67,6F,65,20,55,49,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00"
+        }
+      ]
+    },
+    {
+      "name": "Outlook Plain Text Font",
+      "description": "Default font for plain text emails (Consolas, 10pt - monospace)",
+      "scope": "User",
+      "path": "SOFTWARE\\Microsoft\\Office\\16.0\\Common\\MailSettings",
+      "action": "Set",
+      "values": [
+        {
+          "name": "TextFontComplex",
+          "type": "Binary",
+          "data": "3C,68,74,6D,6C,3E,0D,0A,0D,0A,3C,68,65,61,64,3E,0D,0A,3C,73,74,79,6C,65,3E,0D,0A,0D,0A,20,2F,2A,20,53,74,79,6C,65,20,44,65,66,69,6E,69,74,69,6F,6E,73,20,2A,2F,0D,0A,20,70,2E,4D,73,6F,4E,6F,72,6D,61,6C,2C,20,6C,69,2E,4D,73,6F,4E,6F,72,6D,61,6C,2C,20,64,69,76,2E,4D,73,6F,4E,6F,72,6D,61,6C,0D,0A,20,7B,6D,61,72,67,69,6E,3A,30,69,6E,3B,0D,0A,20,66,6F,6E,74,2D,73,69,7A,65,3A,31,30,2E,30,70,74,3B,0D,0A,20,66,6F,6E,74,2D,66,61,6D,69,6C,79,3A,22,43,6F,6E,73,6F,6C,61,73,22,2C,6D,6F,6E,6F,73,70,61,63,65,3B,7D,0D,0A,0D,0A,3C,2F,73,74,79,6C,65,3E,0D,0A,3C,2F,68,65,61,64,3E,0D,0A,0D,0A,3C,2F,68,74,6D,6C,3E,0D,0A"
+        },
+        {
+          "name": "TextFontSimple",
+          "type": "Binary",
+          "data": "3C,00,00,00,00,00,00,00,A0,02,00,00,00,00,00,00,22,00,00,10,43,6F,6E,73,6F,6C,61,73,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00,00"
+        }
+      ]
+    },
+    {
+      "name": "Outlook Mark as Read Settings",
+      "description": "Configure when messages are marked as read",
+      "scope": "User",
+      "path": "SOFTWARE\\Microsoft\\Office\\16.0\\Outlook\\Options\\Mail",
+      "action": "Set",
+      "values": [
+        {
+          "name": "Send Pictures With Document",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    }
+  ]
+}

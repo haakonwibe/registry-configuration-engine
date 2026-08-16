@@ -1,0 +1,17 @@
+# Internal/private configs kept locally but never published
+Configs/local/
+
+# Generated Intune remediation packages
+Packages/
+
+# Claude Code
+.claude/
+
+# Logs
+*.log
+
+# Transaction logs (local testing)
+Transactions/
+
+# IDE settings
+.vscode/

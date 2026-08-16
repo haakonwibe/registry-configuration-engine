@@ -1,0 +1,201 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Adobe Acrobat Pro/Standard DC security hardening - disables JavaScript, enables Protected Mode, blocks cloud services",
+  "created": "2026-01-29",
+  "notes": [
+    "Reference: https://www.adobe.com/devnet-docs/acrobatetk/tools/PrefRef/Windows/FeatureLockDown.html",
+    "Reference: https://media.defense.gov/2022/Jan/20/2002924940/-1/-1/1/CTR_CONFIGURING_ADOBE_ACROBAT_READER_20220120.PDF",
+    "Applies to Adobe Acrobat Pro DC and Adobe Acrobat Standard DC (paid versions).",
+    "For Adobe Acrobat Reader DC (free), use the separate Reader hardening config.",
+    "Settings are locked via FeatureLockDown - users cannot change them."
+  ],
+  "settings": [
+    {
+      "name": "Protected Mode and Sandbox",
+      "description": "Enable Protected Mode sandbox and AppContainer isolation",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Adobe\\Adobe Acrobat\\DC\\FeatureLockDown",
+      "action": "Set",
+      "values": [
+        {
+          "name": "bProtectedMode",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "iProtectedView",
+          "type": "DWord",
+          "data": 2
+        },
+        {
+          "name": "bEnableProtectedModeAppContainer",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "Enhanced Security",
+      "description": "Enable enhanced security for standalone and browser modes",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Adobe\\Adobe Acrobat\\DC\\FeatureLockDown",
+      "action": "Set",
+      "values": [
+        {
+          "name": "bEnhancedSecurityStandalone",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "bEnhancedSecurityInBrowser",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "Disable JavaScript",
+      "description": "Disable JavaScript execution in PDFs - major attack vector reduction",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Adobe\\Adobe Acrobat\\DC\\FeatureLockDown",
+      "action": "Set",
+      "values": [
+        {
+          "name": "bDisableJavaScript",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "Disable Trust Settings",
+      "description": "Disable trusted folders and sites to prevent bypass of security",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Adobe\\Adobe Acrobat\\DC\\FeatureLockDown",
+      "action": "Set",
+      "values": [
+        {
+          "name": "bDisableTrustedFolders",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "bDisableTrustedSites",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "bDisableOSTrustedSites",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "Disable Cloud Services",
+      "description": "Disable Adobe Document Cloud and third-party cloud connectors",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Adobe\\Adobe Acrobat\\DC\\FeatureLockDown\\cCloud",
+      "action": "Set",
+      "values": [
+        {
+          "name": "bDisableADCFileStore",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "Disable Third-Party Cloud Connectors",
+      "description": "Block Box, Dropbox, OneDrive, and Google Drive integrations",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Adobe\\Adobe Acrobat\\DC\\FeatureLockDown\\cServices",
+      "action": "Set",
+      "values": [
+        {
+          "name": "bToggleWebConnectors",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "Disable Sharing Features",
+      "description": "Disable Adobe Sign, Send & Track, and cloud reviews",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Adobe\\Adobe Acrobat\\DC\\FeatureLockDown\\cServices",
+      "action": "Set",
+      "values": [
+        {
+          "name": "bToggleAdobeSign",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "bToggleSendAndTrack",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "bToggleAdobeReview",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "Disable Notifications and Telemetry",
+      "description": "Disable in-product marketing, notifications, and feedback",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Adobe\\Adobe Acrobat\\DC\\FeatureLockDown\\cServices",
+      "action": "Set",
+      "values": [
+        {
+          "name": "bToggleNotifications",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "bTogglePrefsSync",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "bUpdater",
+          "type": "DWord",
+          "data": 0
+        }
+      ]
+    },
+    {
+      "name": "Disable Flash Content",
+      "description": "Disable Flash rendering in PDFs",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Adobe\\Adobe Acrobat\\DC\\FeatureLockDown",
+      "action": "Set",
+      "values": [
+        {
+          "name": "bEnableFlash",
+          "type": "DWord",
+          "data": 0
+        }
+      ]
+    },
+    {
+      "name": "Disable Attachments",
+      "description": "Prevent launching non-PDF file attachments",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Adobe\\Adobe Acrobat\\DC\\FeatureLockDown",
+      "action": "Set",
+      "values": [
+        {
+          "name": "iFileAttachmentPerms",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    }
+  ]
+}

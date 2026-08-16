@@ -1,0 +1,67 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Detect installations of Firefox and Brave browsers - useful for compliance and software inventory",
+  "created": "2026-01-29",
+  "notes": [
+    "Uses 'NotExists' comparison to detect if browsers are installed (non-compliant if found).",
+    "Checks both machine-wide and per-user installation locations.",
+    "Brave typically installs per-user, Firefox can be either.",
+    "Modify comparison to 'Exists' if you want to REQUIRE these browsers instead of block them."
+  ],
+  "settings": [
+    {
+      "name": "Firefox Not Installed (Machine)",
+      "description": "Detect if Mozilla Firefox is installed machine-wide",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Mozilla\\Mozilla Firefox",
+      "action": "Set",
+      "values": [
+        {
+          "name": "CurrentVersion",
+          "comparison": "NotExists"
+        }
+      ]
+    },
+    {
+      "name": "Firefox Not Installed (32-bit on 64-bit)",
+      "description": "Detect if Mozilla Firefox 32-bit is installed on 64-bit Windows",
+      "scope": "Machine",
+      "path": "SOFTWARE\\WOW6432Node\\Mozilla\\Mozilla Firefox",
+      "action": "Set",
+      "values": [
+        {
+          "name": "CurrentVersion",
+          "comparison": "NotExists"
+        }
+      ]
+    },
+    {
+      "name": "Brave Not Installed (Machine)",
+      "description": "Detect if Brave Browser is installed machine-wide",
+      "scope": "Machine",
+      "path": "SOFTWARE\\BraveSoftware\\Brave-Browser",
+      "action": "Set",
+      "values": [
+        {
+          "name": "InstallLocation",
+          "comparison": "NotExists"
+        }
+      ]
+    },
+    {
+      "name": "Brave Not Installed (User)",
+      "description": "Detect if Brave Browser is installed per-user (common installation method)",
+      "scope": "User",
+      "path": "SOFTWARE\\BraveSoftware\\Brave-Browser",
+      "action": "Set",
+      "values": [
+        {
+          "name": "InstallLocation",
+          "comparison": "NotExists"
+        }
+      ]
+    }
+  ]
+}

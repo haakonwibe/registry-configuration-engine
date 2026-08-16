@@ -1,0 +1,149 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Microsoft Edge enterprise configuration - browser settings and policies",
+  "created": "2026-01-28",
+  "notes": [
+    "These settings configure Edge for enterprise use.",
+    "Machine-scope settings apply to all users and are enforced.",
+    "User-scope settings are defaults that users may be able to change.",
+    "For full Edge policy management, consider using Settings Catalog in Intune."
+  ],
+  "settings": [
+    {
+      "name": "Edge Homepage and Startup",
+      "description": "Configure Edge startup behavior and homepage",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Edge",
+      "action": "Set",
+      "values": [
+        {
+          "name": "HomepageLocation",
+          "type": "String",
+          "data": "https://intranet.contoso.com"
+        },
+        {
+          "name": "HomepageIsNewTabPage",
+          "type": "DWord",
+          "data": 0
+        },
+        {
+          "name": "RestoreOnStartup",
+          "type": "DWord",
+          "data": 4
+        },
+        {
+          "name": "ShowHomeButton",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "Edge Startup URLs",
+      "description": "URLs to open when Edge starts (RestoreOnStartup=4)",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Edge\\RestoreOnStartupURLs",
+      "action": "Set",
+      "values": [
+        {
+          "name": "1",
+          "type": "String",
+          "data": "https://intranet.contoso.com"
+        },
+        {
+          "name": "2",
+          "type": "String",
+          "data": "https://outlook.office365.com"
+        }
+      ]
+    },
+    {
+      "name": "Edge Security Settings",
+      "description": "Security-related Edge policies",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Edge",
+      "action": "Set",
+      "values": [
+        {
+          "name": "SmartScreenEnabled",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "SmartScreenPuaEnabled",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "SSLErrorOverrideAllowed",
+          "type": "DWord",
+          "data": 0
+        },
+        {
+          "name": "PasswordManagerEnabled",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "SitePerProcess",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "Edge Sync Settings",
+      "description": "Configure browser sync behavior",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Edge",
+      "action": "Set",
+      "values": [
+        {
+          "name": "SyncDisabled",
+          "type": "DWord",
+          "data": 0
+        },
+        {
+          "name": "RoamingProfileSupportEnabled",
+          "type": "DWord",
+          "data": 0
+        }
+      ]
+    },
+    {
+      "name": "Edge User Experience",
+      "description": "User preference defaults for Edge",
+      "scope": "User",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Edge",
+      "action": "Set",
+      "values": [
+        {
+          "name": "FavoritesBarEnabled",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "HideFirstRunExperience",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "Edge Default User Settings",
+      "description": "Applied to new user profiles",
+      "scope": "DefaultUser",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Edge",
+      "action": "Set",
+      "values": [
+        {
+          "name": "FavoritesBarEnabled",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    }
+  ]
+}

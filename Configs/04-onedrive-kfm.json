@@ -1,0 +1,115 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "OneDrive for Business configuration - Known Folder Move (KFM) and sync settings",
+  "created": "2026-01-28",
+  "notes": [
+    "Replace YOUR-TENANT-ID-HERE with your actual Entra ID tenant GUID.",
+    "KFM silently moves Desktop, Documents, and Pictures to OneDrive.",
+    "FilesOnDemand reduces local storage usage significantly.",
+    "These policies are typically managed via Intune Settings Catalog, but registry works too."
+  ],
+  "settings": [
+    {
+      "name": "OneDrive Silent KFM Configuration",
+      "description": "Silently redirect known folders to OneDrive",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\OneDrive",
+      "action": "Set",
+      "values": [
+        {
+          "name": "SilentAccountConfig",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "KFMSilentOptIn",
+          "type": "String",
+          "data": "YOUR-TENANT-ID-HERE"
+        },
+        {
+          "name": "KFMSilentOptInWithNotification",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "KFMBlockOptOut",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "OneDrive Files On-Demand",
+      "description": "Enable Files On-Demand to save disk space",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\OneDrive",
+      "action": "Set",
+      "values": [
+        {
+          "name": "FilesOnDemandEnabled",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "OneDrive Sync Restrictions",
+      "description": "Control what can be synced",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\OneDrive",
+      "action": "Set",
+      "values": [
+        {
+          "name": "AllowTenantList",
+          "type": "String",
+          "data": "YOUR-TENANT-ID-HERE"
+        },
+        {
+          "name": "BlockExternalSync",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "DisablePersonalSync",
+          "type": "DWord",
+          "data": 0
+        }
+      ]
+    },
+    {
+      "name": "OneDrive Performance Settings",
+      "description": "Network and performance configuration",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\OneDrive",
+      "action": "Set",
+      "values": [
+        {
+          "name": "EnableAutomaticUploadBandwidthManagement",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "WarningMinDiskSpaceLimitInMB",
+          "type": "DWord",
+          "data": 5120
+        }
+      ]
+    },
+    {
+      "name": "OneDrive User Experience",
+      "description": "User-facing OneDrive settings",
+      "scope": "User",
+      "path": "SOFTWARE\\Microsoft\\OneDrive",
+      "action": "Set",
+      "values": [
+        {
+          "name": "EnableADAL",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    }
+  ]
+}

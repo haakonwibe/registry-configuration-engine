@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "title": "Registry Configuration Engine Schema",
+  "description": "Schema for Registry Configuration Engine JSON configuration files used with Microsoft Intune",
+  "type": "object",
+  "required": ["version", "settings"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Reference to this JSON schema for validation and editor support"
+    },
+    "version": {
+      "type": "string",
+      "description": "Configuration file version",
+      "examples": ["1.0"]
+    },
+    "author": {
+      "type": "string",
+      "description": "Author of this configuration file"
+    },
+    "description": {
+      "type": "string",
+      "description": "Description of what this configuration does"
+    },
+    "created": {
+      "type": "string",
+      "description": "Date the configuration was created (YYYY-MM-DD format)",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "examples": ["2026-01-28"]
+    },
+    "notes": {
+      "type": "array",
+      "description": "Optional notes or comments about this configuration",
+      "items": {
+        "type": "string"
+      }
+    },
+    "settings": {
+      "type": "array",
+      "description": "Array of registry setting groups to apply",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/settingGroup"
+      }
+    }
+  },
+  "$defs": {
+    "settingGroup": {
+      "type": "object",
+      "description": "A group of registry settings to apply to a specific scope and path",
+      "required": ["scope", "path"],
+      "if": {
+        "properties": { "action": { "const": "DeleteKey" } },
+        "required": ["action"]
+      },
+      "else": {
+        "required": ["values"]
+      },
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Display name for this setting group (for logging and documentation)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of what this setting group does"
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["Machine", "User", "DefaultUser"],
+          "description": "Target scope for the registry settings. Machine = HKLM, User = all existing user profiles, DefaultUser = template for new users"
+        },
+        "path": {
+          "type": "string",
+          "description": "Registry path without the hive prefix (e.g., 'SOFTWARE\\MyCompany\\Settings')",
+          "examples": ["SOFTWARE\\MyCompany\\Settings", "SYSTEM\\CurrentControlSet\\Services\\Tcpip6\\Parameters"]
+        },
+        "action": {
+          "type": "string",
+          "enum": ["Set", "Delete", "DeleteKey"],
+          "default": "Set",
+          "description": "Action to perform: Set (create/update values, default), Delete (remove specific values), DeleteKey (remove entire key - requires no 'values')"
+        },
+        "rebootRequired": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, displays a toast notification to the user after remediation indicating a system restart is needed"
+        },
+        "values": {
+          "type": "array",
+          "description": "Array of registry values to set or delete",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/registryValue"
+          }
+        }
+      }
+    },
+    "registryValue": {
+      "type": "object",
+      "description": "A single registry value to set or delete",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the registry value"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["String", "ExpandString", "DWord", "QWord", "Binary", "MultiString"],
+          "description": "Registry value type"
+        },
+        "data": {
+          "description": "Value data. Type depends on the 'type' field. Supports dynamic variables like {{DATE}}, {{DATETIME}}, {{COMPUTERNAME}}, etc.",
+          "oneOf": [
+            { "type": "string" },
+            { "type": "integer" },
+            { "type": "array", "items": { "oneOf": [{ "type": "string" }, { "type": "integer" }] } }
+          ],
+          "examples": [
+            "Hello World",
+            1,
+            "{{DATE}}",
+            "{{DATETIME}}",
+            "{{COMPUTERNAME}}",
+            "%USERPROFILE%\\Documents",
+            "3C,00,00,00",
+            [60, 0, 0, 0],
+            ["Value1", "Value2"]
+          ]
+        },
+        "skipDetection": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, this value is written during remediation but not checked during detection. Useful for timestamp values like {{DATETIME}} that change on each run."
+        },
+        "comparison": {
+          "type": "string",
+          "enum": ["Equals", "NotEquals", "GreaterThan", "GreaterThanOrEqual", "LessThan", "LessThanOrEqual", "Contains", "StartsWith", "EndsWith", "Exists", "NotExists"],
+          "default": "Equals",
+          "description": "Comparison operator for detection. Equals (default) = exact match. Numeric operators (GreaterThan, etc.) for DWord/QWord, compared as unsigned. String operators (Contains, StartsWith, EndsWith) for String. Exists/NotExists check presence. Remediation writes the data value only when the comparison is not already satisfied; NotExists deletes the value instead."
+        },
+        "caseSensitive": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, string-typed comparisons (Equals, NotEquals, Contains, StartsWith, EndsWith) use ordinal case-sensitive matching. Applies to String, ExpandString, and MultiString types. Defaults to ordinal case-insensitive."
+        }
+      },
+      "if": {
+        "properties": { "type": { "const": "String" } }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "string",
+            "description": "String value. Supports dynamic variables: {{DATE}}, {{DATETIME}}, {{COMPUTERNAME}}, {{USERNAME}}, {{DOMAIN}}, {{OSVERSION}}, {{ENGINEVERSION}}"
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+      "version": "1.0",
+      "author": "IT Department",
+      "description": "Example configuration with comparison operators",
+      "settings": [
+        {
+          "name": "Example Setting",
+          "scope": "Machine",
+          "path": "SOFTWARE\\MyCompany\\Settings",
+          "action": "Set",
+          "values": [
+            { "name": "Configured", "type": "DWord", "data": 1 },
+            { "name": "ConfiguredDate", "type": "String", "data": "{{DATE}}" },
+            { "name": "MinVersion", "type": "DWord", "data": 100, "comparison": "GreaterThanOrEqual" },
+            { "name": "LegacySetting", "comparison": "NotExists" }
+          ]
+        }
+      ]
+    }
+  ]
+}

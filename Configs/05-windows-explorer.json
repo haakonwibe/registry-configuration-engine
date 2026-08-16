@@ -1,0 +1,152 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Windows Explorer and shell preferences for enterprise users",
+  "created": "2026-01-28",
+  "notes": [
+    "These settings configure File Explorer behavior for better productivity.",
+    "User scope settings apply to existing user profiles.",
+    "DefaultUser scope ensures new users get these settings automatically.",
+    "Some settings may require logoff/logon or explorer restart to take effect."
+  ],
+  "settings": [
+    {
+      "name": "Explorer Advanced Settings",
+      "description": "Show hidden files, extensions, and other advanced options",
+      "scope": "User",
+      "path": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+      "action": "Set",
+      "values": [
+        {
+          "name": "Hidden",
+          "type": "DWord",
+          "data": 1,
+          "comment": "Show hidden files and folders"
+        },
+        {
+          "name": "HideFileExt",
+          "type": "DWord",
+          "data": 0,
+          "comment": "Show file extensions"
+        },
+        {
+          "name": "ShowSuperHidden",
+          "type": "DWord",
+          "data": 0,
+          "comment": "Hide protected OS files"
+        },
+        {
+          "name": "LaunchTo",
+          "type": "DWord",
+          "data": 1,
+          "comment": "Open Explorer to This PC instead of Quick Access"
+        },
+        {
+          "name": "ShowEncryptCompressedColor",
+          "type": "DWord",
+          "data": 1,
+          "comment": "Show encrypted/compressed files in color"
+        },
+        {
+          "name": "NavPaneShowAllFolders",
+          "type": "DWord",
+          "data": 1,
+          "comment": "Show all folders in navigation pane"
+        }
+      ]
+    },
+    {
+      "name": "Explorer Advanced Settings - Default User",
+      "description": "Same settings applied to new user profiles",
+      "scope": "DefaultUser",
+      "path": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+      "action": "Set",
+      "values": [
+        {
+          "name": "Hidden",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "HideFileExt",
+          "type": "DWord",
+          "data": 0
+        },
+        {
+          "name": "LaunchTo",
+          "type": "DWord",
+          "data": 1
+        },
+        {
+          "name": "ShowEncryptCompressedColor",
+          "type": "DWord",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "name": "Quick Access Configuration",
+      "description": "Control what appears in Quick Access",
+      "scope": "User",
+      "path": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer",
+      "action": "Set",
+      "values": [
+        {
+          "name": "ShowFrequent",
+          "type": "DWord",
+          "data": 0,
+          "comment": "Don't show frequently used folders in Quick Access"
+        },
+        {
+          "name": "ShowRecent",
+          "type": "DWord",
+          "data": 0,
+          "comment": "Don't show recently used files in Quick Access"
+        }
+      ]
+    },
+    {
+      "name": "Taskbar Settings",
+      "description": "Taskbar behavior configuration",
+      "scope": "User",
+      "path": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+      "action": "Set",
+      "values": [
+        {
+          "name": "TaskbarGlomLevel",
+          "type": "DWord",
+          "data": 0,
+          "comment": "Always combine taskbar buttons"
+        },
+        {
+          "name": "TaskbarSmallIcons",
+          "type": "DWord",
+          "data": 0,
+          "comment": "Use large taskbar icons"
+        }
+      ]
+    },
+    {
+      "name": "Search Settings",
+      "description": "Windows Search behavior",
+      "scope": "User",
+      "path": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Search",
+      "action": "Set",
+      "values": [
+        {
+          "name": "SearchboxTaskbarMode",
+          "type": "DWord",
+          "data": 1,
+          "comment": "Show search icon only (not full box)"
+        },
+        {
+          "name": "BingSearchEnabled",
+          "type": "DWord",
+          "data": 0,
+          "comment": "Disable Bing search in Start menu"
+        }
+      ]
+    }
+  ]
+}
