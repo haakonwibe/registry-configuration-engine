@@ -2,7 +2,7 @@
 # Registry Configuration Engine - Remediate (packaged for Intune)
 # Engine version : 1.2.6
 # Source config  : 08-prefer-ipv4.json
-# Generated      : 2026-08-16 20:47:19 +02:00
+# Generated      : 2026-08-17 10:38:12 +02:00
 # DO NOT EDIT - regenerate via New-IntunePackage.ps1
 # ============================================================================
 <#
@@ -1306,9 +1306,9 @@ function Get-ValueSignature {
         remediation uses. Without that step 4294967295, -1 and "0xffffffff" look
         like three different DWord instructions when all three write the identical
         value, and the author would be told their entries disagree when they do
-        not. That is not hypothetical: ConvertFrom-RegistryExport emitted -1 before
-        v1.2.2 and the unsigned decimal after, so concatenating an old converted
-        config with a new one produces exactly that pair. Pure - no registry access.
+        not. That is not hypothetical: older converted configs carry -1 where current
+        ones carry the unsigned decimal, so concatenating two of them produces exactly
+        that pair. Pure - no registry access.
 
         Which fields bear behaviour depends on the group's action and on the
         comparison, so both are taken into account before a field is allowed to
@@ -1512,12 +1512,12 @@ function Assert-ValidConfig {
             # them in order so the last one wins, and detection then fails on the
             # earlier one on every run - a remediation loop that never converges.
             #
-            # Both cases warn; neither throws. The disagreement case did throw up to
-            # v1.2.5, and that was the wrong trade: deciding whether two entries mean
-            # the same thing takes a model of the whole runtime (type resolution,
-            # comparison semantics, defaults, boolean coercion, per-action fields),
-            # and every gap in that model surfaced as a *false* conflict - a valid
-            # config rejected with exit code 3 and a package build refused. A missed
+            # Both cases warn; neither throws. Rejecting the disagreement case would
+            # be the wrong trade: deciding whether two entries mean the same thing
+            # takes a model of the whole runtime (type resolution, comparison
+            # semantics, defaults, boolean coercion, per-action fields), and any gap
+            # in that model surfaces as a *false* conflict - a valid config
+            # rejected with exit code 3 and a package build refused. A missed
             # conflict costs a remediation loop that Intune reporting makes visible;
             # a false conflict blocks the deployment outright. Warn, and let the
             # config through.
