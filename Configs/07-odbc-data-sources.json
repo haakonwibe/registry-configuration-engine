@@ -1,0 +1,191 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Create ODBC data sources (System and User DSNs) for a line-of-business database",
+  "created": "2026-08-16",
+  "notes": [
+    "A DSN needs TWO keys to work: the per-DSN subkey holding the connection details, and a value under 'ODBC Data Sources' naming the driver. Create only the first and the DSN never appears in the ODBC Data Source Administrator - the classic reason a hand-made DSN 'does nothing'.",
+    "Under 'ODBC Data Sources' the value NAME is the DSN name and its DATA is the driver description, spelled exactly as the driver registered itself in ODBCINST.INI (for example 'ODBC Driver 18 for SQL Server').",
+    "32-bit applications read SOFTWARE\\WOW6432Node\\ODBC\\ODBC.INI, not SOFTWARE\\ODBC\\ODBC.INI. A 64-bit-only DSN is invisible to a 32-bit LOB app, so both are defined below - drop the 32-bit pair if every consumer is 64-bit.",
+    "System DSNs (HKLM) are available to every user on the device. User DSNs (HKCU) are per-profile - the User scope writes them into every profile on the machine, including signed-out ones. Change the scope to DefaultUser to give the DSN to future users instead.",
+    "This config creates the data source only. The ODBC driver itself must already be installed; deploy it as a separate Intune app and make this remediation depend on it.",
+    "Never store a password here. Trusted_Connection=Yes uses the signed-in Windows identity, which is also what lets one DSN serve every user."
+  ],
+  "settings": [
+    {
+      "name": "Contoso ERP - System DSN (64-bit)",
+      "description": "Connection details for the 64-bit System DSN",
+      "scope": "Machine",
+      "path": "SOFTWARE\\ODBC\\ODBC.INI\\Contoso ERP",
+      "action": "Set",
+      "values": [
+        {
+          "name": "Driver",
+          "type": "String",
+          "data": "C:\\Windows\\system32\\msodbcsql18.dll"
+        },
+        {
+          "name": "Description",
+          "type": "String",
+          "data": "Contoso ERP production database"
+        },
+        {
+          "name": "Server",
+          "type": "String",
+          "data": "sql-erp-prod.contoso.com"
+        },
+        {
+          "name": "Database",
+          "type": "String",
+          "data": "ERPProd"
+        },
+        {
+          "name": "Trusted_Connection",
+          "type": "String",
+          "data": "Yes"
+        },
+        {
+          "name": "Encrypt",
+          "type": "String",
+          "data": "Yes"
+        },
+        {
+          "name": "TrustServerCertificate",
+          "type": "String",
+          "data": "No"
+        }
+      ]
+    },
+    {
+      "name": "Contoso ERP - System DSN registration (64-bit)",
+      "description": "Registers the DSN so it appears in the ODBC Data Source Administrator",
+      "scope": "Machine",
+      "path": "SOFTWARE\\ODBC\\ODBC.INI\\ODBC Data Sources",
+      "action": "Set",
+      "values": [
+        {
+          "name": "Contoso ERP",
+          "type": "String",
+          "data": "ODBC Driver 18 for SQL Server"
+        }
+      ]
+    },
+    {
+      "name": "Contoso ERP - System DSN (32-bit)",
+      "description": "Same DSN under Wow6432Node so 32-bit applications can see it",
+      "scope": "Machine",
+      "path": "SOFTWARE\\WOW6432Node\\ODBC\\ODBC.INI\\Contoso ERP",
+      "action": "Set",
+      "values": [
+        {
+          "name": "Driver",
+          "type": "String",
+          "data": "C:\\Windows\\SysWOW64\\msodbcsql18.dll"
+        },
+        {
+          "name": "Description",
+          "type": "String",
+          "data": "Contoso ERP production database"
+        },
+        {
+          "name": "Server",
+          "type": "String",
+          "data": "sql-erp-prod.contoso.com"
+        },
+        {
+          "name": "Database",
+          "type": "String",
+          "data": "ERPProd"
+        },
+        {
+          "name": "Trusted_Connection",
+          "type": "String",
+          "data": "Yes"
+        },
+        {
+          "name": "Encrypt",
+          "type": "String",
+          "data": "Yes"
+        },
+        {
+          "name": "TrustServerCertificate",
+          "type": "String",
+          "data": "No"
+        }
+      ]
+    },
+    {
+      "name": "Contoso ERP - System DSN registration (32-bit)",
+      "description": "Registers the 32-bit DSN in the Wow6432Node view",
+      "scope": "Machine",
+      "path": "SOFTWARE\\WOW6432Node\\ODBC\\ODBC.INI\\ODBC Data Sources",
+      "action": "Set",
+      "values": [
+        {
+          "name": "Contoso ERP",
+          "type": "String",
+          "data": "ODBC Driver 18 for SQL Server"
+        }
+      ]
+    },
+    {
+      "name": "Contoso Reporting - User DSN",
+      "description": "Per-profile DSN, written into every user profile on the device",
+      "scope": "User",
+      "path": "SOFTWARE\\ODBC\\ODBC.INI\\Contoso Reporting",
+      "action": "Set",
+      "values": [
+        {
+          "name": "Driver",
+          "type": "String",
+          "data": "C:\\Windows\\system32\\msodbcsql18.dll"
+        },
+        {
+          "name": "Description",
+          "type": "String",
+          "data": "Contoso reporting warehouse (read-only)"
+        },
+        {
+          "name": "Server",
+          "type": "String",
+          "data": "sql-reporting.contoso.com"
+        },
+        {
+          "name": "Database",
+          "type": "String",
+          "data": "ReportingDW"
+        },
+        {
+          "name": "Trusted_Connection",
+          "type": "String",
+          "data": "Yes"
+        },
+        {
+          "name": "Encrypt",
+          "type": "String",
+          "data": "Yes"
+        },
+        {
+          "name": "TrustServerCertificate",
+          "type": "String",
+          "data": "No"
+        }
+      ]
+    },
+    {
+      "name": "Contoso Reporting - User DSN registration",
+      "description": "Registers the User DSN in each profile",
+      "scope": "User",
+      "path": "SOFTWARE\\ODBC\\ODBC.INI\\ODBC Data Sources",
+      "action": "Set",
+      "values": [
+        {
+          "name": "Contoso Reporting",
+          "type": "String",
+          "data": "ODBC Driver 18 for SQL Server"
+        }
+      ]
+    }
+  ]
+}

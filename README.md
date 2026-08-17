@@ -42,7 +42,7 @@ RegistryConfigEngine/
 │   ├── 04-onedrive-kfm.json          # OneDrive Known Folder Move
 │   ├── 05-windows-explorer.json      # Explorer preferences
 │   ├── 06-cleanup-delete.json        # Delete/cleanup examples
-│   ├── 07-teams-enterprise.json      # Teams configuration
+│   ├── 07-odbc-data-sources.json     # ODBC System and User DSNs
 │   ├── 08-prefer-ipv4.json           # IPv4 over IPv6 preference
 │   ├── 09-comparison-operators.json  # Comparison operators examples
 │   ├── 10-browser-detection.json     # Detect Firefox/Brave installation
@@ -432,7 +432,7 @@ Ready-to-use configuration files in the `Configs/` folder:
 | `04-onedrive-kfm.json` | OneDrive Known Folder Move setup |
 | `05-windows-explorer.json` | File Explorer preferences |
 | `06-cleanup-delete.json` | Delete/cleanup operation examples |
-| `07-teams-enterprise.json` | Microsoft Teams configuration |
+| `07-odbc-data-sources.json` | ODBC System and User DSNs (32-bit and 64-bit) |
 | `08-prefer-ipv4.json` | Prefer IPv4 over IPv6 |
 | `09-comparison-operators.json` | Demonstrates comparison operators for flexible detection |
 | `10-browser-detection.json` | Detect Firefox/Brave browser installations |
