@@ -1,0 +1,73 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Zoom Workplace desktop client hardening - force SSO, remove consumer login methods, block personal sign-up, keep certificate validation on - plus Zoom VDI plugin update management for virtual desktops.",
+  "created": "2026-09-09",
+  "notes": [
+    "Source: Zoom - Mass-deploying with Group Policy Objects (KB0065466) for every value in the General group.",
+    "Source: Zoom - VDI client registry settings (KB0064784) for the VDI and PerInstall groups.",
+    "Source: Zoom - Enterprise Auto Update policies for the Zoom client (KB0058493).",
+    "POLICY PATHS: Zoom's client policies live under HKLM\\SOFTWARE\\Policies\\Zoom\\Zoom Meetings\\ with General, Meetings and Chat subkeys. There is also an HKCU\\SOFTWARE\\Policies\\Zoom\\Zoom Meetings\\Meetings path if you need per-profile settings - use the engine's User and DefaultUser scopes for that.",
+    "NOT SET - ForceSSOURL / SetSSOURL: the vanity SSO URL is environment-specific (String, e.g. yourcompany.zoom.us). SetSSOURL sets the default; ForceSSOURL sets AND locks it. ForceLoginWithSSO=1 works without either - the user is prompted for the company domain - so the config stays deployable as shipped. Add ForceSSOURL for the tenant once you know the value.",
+    "NOT SET - SetEmailDomainsRestrictedToLogin: String, domain list separated by '&'. Restricts which email domains may sign in. Environment-specific, and worth adding alongside ForceSSOURL.",
+    "DELIBERATELY NOT SET - DisableLoginWithMicrosoft: for many tenants 'Sign in with Microsoft' IS the Entra ID path users take. Setting it to 1 alongside DisableLoginWithEmail can lock the whole fleet out of Zoom. Confirm which method your tenant actually uses before adding it.",
+    "NOT SET - EnforceSignInToJoin, EnforceAppSignInToJoin and SetAccountIDsRestrictedToJoin: these are business decisions rather than baseline hardening. SetAccountIDsRestrictedToJoin in particular restricts the client to meetings hosted by named Zoom accounts, which blocks joining customer and partner meetings.",
+    "AUTO UPDATE - DO NOT COPY OLD GUIDES: EnableSilentAutoUpdate, AlwaysCheckLatestVersion, ZoomAutoUpdate and SetUpdatingChannel are no longer supported by Zoom. They are replaced by the AU2 policies - AU2_EnableAutoUpdate (boolean, default enabled), AU2_SetUpdateChannel (string, Slow=0 for stability / Fast=1), AU2_InstallAtIdleTime (boolean) and AU2_SafeUpgradePeriod (string, HHMM-HHMM, default 0000-0400). They are not set here because Zoom's article documents them by name without stating a registry path; verify the path on a pilot device before adding them.",
+    "WOW64 - THIS ONE IS NOT OPTIONAL: SOFTWARE\\Zoom VDI is an ordinary redirected branch, unlike SOFTWARE\\Policies which is a WOW64 shared key. A 32-bit Zoom VDI client genuinely reads SOFTWARE\\WOW6432Node\\Zoom VDI, so Zoom documents both paths and both are written here. The Policies groups above need no such twin.",
+    "VDI GROUPS APPLY ON THE VM, NOT THE ENDPOINT. Zoom's thin client settings are configured on the physical endpoint running the plugin, and thin client settings generally override VM settings where both exist. This config only covers the VM side.",
+    "VDI DEPLOYMENT REALITY - NON-PERSISTENT HOSTS: on a pooled or non-persistent image, Machine-scope changes are discarded when the VM reverts. Bake this config into the golden image (run it once with -Mode Remediate during image build) rather than relying on an Intune remediation cycle that has to win a race against the next reboot.",
+    "VDI DEPLOYMENT REALITY - FSLOGIX: when profile containers detach at sign-out, the ProfileList entry usually goes with them, so the engine's User scope reaches only sessions that are signed in when it runs, and DefaultUser only affects users who have never logged on (their container is built from the default profile at first logon). Plan per-user settings around logon-time application, not a nightly remediation.",
+    "VDI DEPLOYMENT REALITY - REBOOT TOASTS: rebootRequired registers a scheduled task running as the local Users group. On multi-session hosts (AVD pooled, Windows 365 multi-session, RDS) it fires for whichever Users-group member the scheduler picks, not for everyone. Strip rebootRequired from any config you target at multi-session hosts - configs 16 and 17 both set it."
+  ],
+  "settings": [
+    {
+      "name": "Sign-in restrictions and certificate validation",
+      "description": "Forces the SSO sign-in path, removes the consumer login methods, blocks creating a personal Zoom account from the client, and keeps untrusted-certificate blocking and certificate pinning on.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Zoom\\Zoom Meetings\\General",
+      "action": "Set",
+      "values": [
+        { "name": "ForceLoginWithSSO", "type": "DWord", "data": 1 },
+        { "name": "DisableLoginWithEmail", "type": "DWord", "data": 1 },
+        { "name": "DisableGoogleLogin", "type": "DWord", "data": 1 },
+        { "name": "DisableFacebookLogin", "type": "DWord", "data": 1 },
+        { "name": "DisableUserSignUp", "type": "DWord", "data": 1 },
+        { "name": "BlockUntrustedSSLCert", "type": "DWord", "data": 1 },
+        { "name": "DisableCertPin", "type": "DWord", "data": 0 }
+      ]
+    },
+    {
+      "name": "Zoom VDI plugin updates (VM side)",
+      "description": "Keeps the VDI media plugin patched without user interaction. UpdatePluginLater=2 defers the update to session disconnect so it never interrupts a meeting. Only relevant on a VDI virtual machine.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Zoom\\Zoom Meetings\\VDI",
+      "action": "Set",
+      "values": [
+        { "name": "EnableVDIPluginAutoUpgrade", "type": "DWord", "data": 1 },
+        { "name": "ForceSilentVDIPluginUpdate", "type": "DWord", "data": 1 },
+        { "name": "UpdatePluginLater", "type": "DWord", "data": 2 }
+      ]
+    },
+    {
+      "name": "Zoom VDI per-user data directory (64-bit view)",
+      "description": "UniqueDataDir gives each session its own Zoom data folder, which matters on multi-session hosts where several users share one OS instance. Not under Policies, so it needs the WOW6432Node twin below.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Zoom VDI\\PerInstall",
+      "action": "Set",
+      "values": [
+        { "name": "UniqueDataDir", "type": "String", "data": "YES" }
+      ]
+    },
+    {
+      "name": "Zoom VDI per-user data directory (32-bit view)",
+      "description": "Same value in the redirected 32-bit view, which is what a 32-bit Zoom VDI client actually reads. Zoom documents both locations.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\WOW6432Node\\Zoom VDI\\PerInstall",
+      "action": "Set",
+      "values": [
+        { "name": "UniqueDataDir", "type": "String", "data": "YES" }
+      ]
+    }
+  ]
+}

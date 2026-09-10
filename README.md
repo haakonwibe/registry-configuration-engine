@@ -49,7 +49,11 @@ RegistryConfigEngine/
 │   ├── 11-global-secure-access-production.json  # GSA production config
 │   ├── 12-global-secure-access-developer.json   # GSA developer config
 │   ├── 13-adobe-reader-hardening.json    # Adobe Reader DC security hardening
-│   └── 14-adobe-acrobat-hardening.json   # Adobe Acrobat Pro/Standard hardening
+│   ├── 14-adobe-acrobat-hardening.json   # Adobe Acrobat Pro/Standard hardening
+│   ├── 15-gpo-tattoo-cleanup.json        # Remove stale GPO settings after Intune migration
+│   ├── 16-point-and-print-hardening.json # Point and Print / PrintNightmare hardening
+│   ├── 17-copilot-ai-consumer-features.json # Turn off Copilot, Recall and consumer content
+│   └── 18-zoom-client-hardening.json     # Zoom client SSO/cert hardening + VDI plugin
 ├── ExamplePackages/                   # Pre-generated Intune script examples
 │   ├── README.md                     # Usage instructions
 │   ├── PreferIPv4-Detect.ps1         # Simple example - detection
@@ -440,6 +444,10 @@ Ready-to-use configuration files in the `Configs/` folder:
 | `12-global-secure-access-developer.json` | Global Secure Access - developer (full control) |
 | `13-adobe-reader-hardening.json` | Adobe Reader DC security hardening |
 | `14-adobe-acrobat-hardening.json` | Adobe Acrobat Pro/Standard DC security hardening |
+| `15-gpo-tattoo-cleanup.json` | Remove GPO settings left behind after an AD to Intune migration |
+| `16-point-and-print-hardening.json` | Point and Print / PrintNightmare hardening (CVE-2021-34527) |
+| `17-copilot-ai-consumer-features.json` | Turn off Windows Copilot, Recall, Paint AI and Microsoft consumer content |
+| `18-zoom-client-hardening.json` | Zoom client sign-in/certificate hardening and VDI plugin updates |
 
 ## 🔭 Future Enhancements
 

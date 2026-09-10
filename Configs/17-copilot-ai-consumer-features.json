@@ -1,0 +1,184 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Turn off Windows Copilot, Recall, Click to Do, Paint generative AI, and Microsoft consumer content - machine policy plus the per-profile Settings toggles that still apply on Windows 11 Pro.",
+  "created": "2026-09-09",
+  "notes": [
+    "Source: Policy CSP - WindowsAI (WindowsCopilot.admx) for every WindowsAI, WindowsCopilot and Paint value below.",
+    "Source: Policy CSP - Experience (CloudContent.admx) for the CloudContent values.",
+    "Source: Manage Recall, Manage Click to Do, and Manage connections from Windows to Microsoft services.",
+    "EDITION GATE - READ THIS FIRST: every CloudContent policy (DisableWindowsConsumerFeatures, DisableConsumerAccountStateContent, DisableCloudOptimizedContent, DisableSoftLanding) is documented as Enterprise, Education and IoT Enterprise only - NOT Windows 11 Pro. On a Pro fleet those four values are inert, and the per-profile ContentDeliveryManager group is the part that actually removes the suggestions. That is the main reason this config sets both.",
+    "COPILOT, THE HONEST VERSION: TurnOffWindowsCopilot is marked deprecated by Microsoft, is User Configuration only, and explicitly does NOT cover the current Copilot app experience - it applied to the old Copilot in Windows side pane. It is set here because it still suppresses the legacy pane and blocks the pane-era app being carried in from an image, but do not read it as 'Copilot is blocked'. Removing or blocking the Copilot Store app is app management (Intune app assignment, winget, or app control policy), not a registry setting.",
+    "RECALL: AllowRecallEnablement=0 removes the Recall component from the device, and any snapshots already saved are deleted. It needs a restart, which is why that group carries rebootRequired. Recall is already off by default on managed commercial devices - setting it explicitly is what makes a device where it was turned on visible to detection. DisableAIDataAnalysis=1 is the belt to that braces: no snapshots saved even if the component is present.",
+    "PAINT: the three Paint values live under SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Paint, NOT under SOFTWARE\\Policies\\Microsoft\\.... That is what Microsoft documents and it is an easy one to get wrong. Like SOFTWARE\\Policies, that branch is WOW64-shared, so there is no WOW6432Node twin to write.",
+    "CLICK TO DO: the CSP reference still lists DisableClickToDo as Windows Insider Preview even though the feature ships. Setting the value on a build that does not support it is inert, so it is included for both device and user scope.",
+    "DELIBERATELY NOT SET - DisableWindowsSpotlightFeatures: it turns off ALL Spotlight features including the lock screen and desktop wallpaper rotation, which many estates keep on purpose. If the goal is to keep the Spotlight picture but lose the clutter, use RotatingLockScreenOverlayEnabled=0 (included below, removes the overlay text but keeps the image) and hide the desktop 'Learn about this picture' icon separately.",
+    "NOT ADMX-DOCUMENTED: the ContentDeliveryManager and UserProfileEngagement values are the registry backing for the Settings > Personalization and Settings > System > Notifications toggles. Microsoft does not publish them as policy, but they are stable, they are per-profile, and they work on Pro where the CloudContent policies do not. Treat them as best-effort and re-check after a feature update.",
+    "The per-profile groups are the reason to run this through the engine at all - they are applied to every profile in ProfileList and to the new-user template, which MDM policy cannot do since it only reaches the enrolled user.",
+    "NOT INCLUDED: Copilot in Microsoft Edge (Edge policies - belongs with the Edge config), Microsoft 365 Copilot (Office policy and licensing), and DisableSettingsAgent / DisableAgentWorkspaces (the agentic Windows preview policies under the same WindowsAI key, currently Insider Preview and Enterprise/Education only) - worth revisiting as those ship."
+  ],
+  "settings": [
+    {
+      "name": "Windows AI - Recall, snapshots and Click to Do (machine)",
+      "description": "AllowRecallEnablement=0 removes the Recall component and deletes existing snapshots; DisableAIDataAnalysis=1 stops snapshots being saved; DisableClickToDo=1 removes Click to Do and its entry points.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI",
+      "action": "Set",
+      "rebootRequired": true,
+      "values": [
+        { "name": "AllowRecallEnablement", "type": "DWord", "data": 0 },
+        { "name": "DisableAIDataAnalysis", "type": "DWord", "data": 1 },
+        { "name": "DisableClickToDo", "type": "DWord", "data": 1 }
+      ]
+    },
+    {
+      "name": "Paint generative AI",
+      "description": "Disables Cocreator, Image Creator and generative fill in the Windows Paint app. Note the non-obvious key location - CurrentVersion\\Policies\\Paint, not SOFTWARE\\Policies.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Paint",
+      "action": "Set",
+      "values": [
+        { "name": "DisableCocreator", "type": "DWord", "data": 1 },
+        { "name": "DisableImageCreator", "type": "DWord", "data": 1 },
+        { "name": "DisableGenerativeFill", "type": "DWord", "data": 1 }
+      ]
+    },
+    {
+      "name": "Microsoft consumer experiences and cloud content",
+      "description": "Turns off consumer experiences, cloud consumer account state content, cloud optimized content and Windows tips. ENTERPRISE/EDUCATION ONLY - inert on Windows 11 Pro.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent",
+      "action": "Set",
+      "values": [
+        { "name": "DisableWindowsConsumerFeatures", "type": "DWord", "data": 1 },
+        { "name": "DisableConsumerAccountStateContent", "type": "DWord", "data": 1 },
+        { "name": "DisableCloudOptimizedContent", "type": "DWord", "data": 1 },
+        { "name": "DisableSoftLanding", "type": "DWord", "data": 1 }
+      ]
+    },
+
+    {
+      "name": "Windows AI user policy - existing profiles",
+      "description": "User Configuration half of the Recall snapshot and Click to Do policies, applied to every profile in ProfileList.",
+      "scope": "User",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI",
+      "action": "Set",
+      "values": [
+        { "name": "DisableAIDataAnalysis", "type": "DWord", "data": 1 },
+        { "name": "DisableClickToDo", "type": "DWord", "data": 1 }
+      ]
+    },
+    {
+      "name": "Windows AI user policy - new user template",
+      "description": "Same values in the Default User hive so new profiles start with snapshots and Click to Do off.",
+      "scope": "DefaultUser",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsAI",
+      "action": "Set",
+      "values": [
+        { "name": "DisableAIDataAnalysis", "type": "DWord", "data": 1 },
+        { "name": "DisableClickToDo", "type": "DWord", "data": 1 }
+      ]
+    },
+    {
+      "name": "Turn off Windows Copilot - existing profiles",
+      "description": "Legacy Copilot in Windows pane. Deprecated policy, User Configuration only, and does not cover the current Copilot app - see notes.",
+      "scope": "User",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot",
+      "action": "Set",
+      "values": [
+        { "name": "TurnOffWindowsCopilot", "type": "DWord", "data": 1 }
+      ]
+    },
+    {
+      "name": "Turn off Windows Copilot - new user template",
+      "description": "Same value in the Default User hive.",
+      "scope": "DefaultUser",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot",
+      "action": "Set",
+      "values": [
+        { "name": "TurnOffWindowsCopilot", "type": "DWord", "data": 1 }
+      ]
+    },
+    {
+      "name": "Tailored experiences - existing profiles",
+      "description": "Stops Windows using diagnostic data to personalise tips, offers and lock screen content. User Configuration policy, so it applies on Pro as well.",
+      "scope": "User",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent",
+      "action": "Set",
+      "values": [
+        { "name": "DisableTailoredExperiencesWithDiagnosticData", "type": "DWord", "data": 1 }
+      ]
+    },
+    {
+      "name": "Tailored experiences - new user template",
+      "description": "Same value in the Default User hive.",
+      "scope": "DefaultUser",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent",
+      "action": "Set",
+      "values": [
+        { "name": "DisableTailoredExperiencesWithDiagnosticData", "type": "DWord", "data": 1 }
+      ]
+    },
+    {
+      "name": "Suggested content and promoted app installs - existing profiles",
+      "description": "The Settings toggles behind Start suggestions, tips, suggested content in Settings, the post-update welcome experience, and silent installation of promoted apps. Not ADMX-documented, but this is what works on Windows 11 Pro. RotatingLockScreenOverlayEnabled=0 removes the Spotlight overlay text while keeping the picture.",
+      "scope": "User",
+      "path": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager",
+      "action": "Set",
+      "values": [
+        { "name": "SilentInstalledAppsEnabled", "type": "DWord", "data": 0 },
+        { "name": "PreInstalledAppsEnabled", "type": "DWord", "data": 0 },
+        { "name": "OemPreInstalledAppsEnabled", "type": "DWord", "data": 0 },
+        { "name": "SystemPaneSuggestionsEnabled", "type": "DWord", "data": 0 },
+        { "name": "SoftLandingEnabled", "type": "DWord", "data": 0 },
+        { "name": "RotatingLockScreenOverlayEnabled", "type": "DWord", "data": 0 },
+        { "name": "SubscribedContent-310093Enabled", "type": "DWord", "data": 0 },
+        { "name": "SubscribedContent-338388Enabled", "type": "DWord", "data": 0 },
+        { "name": "SubscribedContent-338389Enabled", "type": "DWord", "data": 0 },
+        { "name": "SubscribedContent-353694Enabled", "type": "DWord", "data": 0 },
+        { "name": "SubscribedContent-353696Enabled", "type": "DWord", "data": 0 }
+      ]
+    },
+    {
+      "name": "Suggested content and promoted app installs - new user template",
+      "description": "Same values in the Default User hive, so a new profile is never seeded with promoted apps or suggestion content.",
+      "scope": "DefaultUser",
+      "path": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager",
+      "action": "Set",
+      "values": [
+        { "name": "SilentInstalledAppsEnabled", "type": "DWord", "data": 0 },
+        { "name": "PreInstalledAppsEnabled", "type": "DWord", "data": 0 },
+        { "name": "OemPreInstalledAppsEnabled", "type": "DWord", "data": 0 },
+        { "name": "SystemPaneSuggestionsEnabled", "type": "DWord", "data": 0 },
+        { "name": "SoftLandingEnabled", "type": "DWord", "data": 0 },
+        { "name": "RotatingLockScreenOverlayEnabled", "type": "DWord", "data": 0 },
+        { "name": "SubscribedContent-310093Enabled", "type": "DWord", "data": 0 },
+        { "name": "SubscribedContent-338388Enabled", "type": "DWord", "data": 0 },
+        { "name": "SubscribedContent-338389Enabled", "type": "DWord", "data": 0 },
+        { "name": "SubscribedContent-353694Enabled", "type": "DWord", "data": 0 },
+        { "name": "SubscribedContent-353696Enabled", "type": "DWord", "data": 0 }
+      ]
+    },
+    {
+      "name": "Finish setting up this device prompt - existing profiles",
+      "description": "Suppresses the post-update 'Let's finish setting up your device' full screen nag. Not ADMX-documented; backs the Settings > System > Notifications toggle.",
+      "scope": "User",
+      "path": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\UserProfileEngagement",
+      "action": "Set",
+      "values": [
+        { "name": "ScoobeSystemSettingEnabled", "type": "DWord", "data": 0 }
+      ]
+    },
+    {
+      "name": "Finish setting up this device prompt - new user template",
+      "description": "Same value in the Default User hive.",
+      "scope": "DefaultUser",
+      "path": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\UserProfileEngagement",
+      "action": "Set",
+      "values": [
+        { "name": "ScoobeSystemSettingEnabled", "type": "DWord", "data": 0 }
+      ]
+    }
+  ]
+}

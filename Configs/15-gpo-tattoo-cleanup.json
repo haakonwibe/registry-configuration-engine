@@ -1,0 +1,113 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "GPO tattoo cleanup after an AD Group Policy to Intune migration - removes stale policy values and retired policy branches that no longer have a GPO to revoke them. TEMPLATE: audit with -Mode Detect first, then edit the target list to match the estate.",
+  "created": "2026-09-09",
+  "notes": [
+    "WHY THIS EXISTS: Group Policy normally cleans its own managed branches (HKLM/HKCU SOFTWARE\\Policies and ...\\CurrentVersion\\Policies) on every refresh. When a device stops receiving a GPO - unlinked, moved OU, unjoined, or migrated to Intune - no refresh ever runs, so the last-written values stay behind forever. Group Policy Preferences items and 'apply once' registry items write outside the managed branches and tattoo by design.",
+    "AUDIT FIRST: run -Mode Detect. A DeleteKey group reports non-compliant only when the key actually exists, and a Delete group only when the named value exists, so the non-compliant list is an inventory of what is really present on the device. Nothing is removed until -Mode Remediate.",
+    "THIS IS A TEMPLATE, NOT A DROP-IN. Every group below is an example of a common tattoo. Confirm each one against the estate before deploying, and add the products that were actually GPO-managed. The engine has no wildcard support, so each path must be named literally.",
+    "DO NOT BLANKET-DELETE SOFTWARE\\Policies. Intune's ADMX-backed and Settings Catalog policies write to the SAME policy branches as GPO did. Removing a branch Intune is actively managing produces churn - the engine deletes it, the next MDM sync writes it back - or leaves the setting off until that sync. Only target branches that nothing is managing any more.",
+    "SAFETY NET: DeleteKey exports the key to a .reg file under C:\\ProgramData\\RegistryConfigEngine\\Transactions\\KeyBackups\\ before removing it, and records the path in the transaction log. For Machine scope, -Mode Rollback restores the key with reg.exe import. Delete backs up the individual value the same way.",
+    "ROLLBACK LIMIT: a DeleteKey in DefaultUser scope, or in a User profile the engine had to mount itself, is tagged TempMount and is NOT restored automatically - the temp mount no longer exists at rollback time. The .reg backup is kept for manual recovery. Machine-scope deletions are the ones with a clean undo.",
+    "WINDOWS UPDATE (the flagship case): leftover WUServer/UseWUServer keeps a device scanning a decommissioned WSUS server, and Windows Update for Business rings from Intune never take effect. These are removed as named values rather than by deleting the whole WindowsUpdate branch, because Intune update policy can legitimately place values in the same key.",
+    "OTHER TARGETS WORTH ADDING once verified for the estate: stale WPAD/proxy from Group Policy Preferences (HKCU SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings - AutoConfigURL, ProxyServer, ProxyEnable - Internet Settings is not a managed branch, so GPP writes there permanently); GPP mapped drives (HKCU Network\\<letter>) and printer connections; stale Defender exclusions under SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Exclusions (check Intune Endpoint Security is not managing them first); decommissioned AV, VPN and backup agent policy branches.",
+    "The HKLM\\SOFTWARE\\Policies branch is a WOW64 shared key, so there is no SOFTWARE\\WOW6432Node\\Policies twin to clean - Group Policy never wrote one."
+  ],
+  "settings": [
+    {
+      "name": "WSUS server pointers (dual scan)",
+      "description": "Stale WSUS/dual-scan values that survive the move to Windows Update for Business. Named values only - the WindowsUpdate key itself is left in place because Intune update policy may use it.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate",
+      "action": "Delete",
+      "values": [
+        { "name": "WUServer" },
+        { "name": "WUStatusServer" },
+        { "name": "UpdateServiceUrlAlternate" },
+        { "name": "TargetGroup" },
+        { "name": "TargetGroupEnabled" },
+        { "name": "DoNotConnectToWindowsUpdateInternetLocations" },
+        { "name": "DisableDualScan" },
+        { "name": "SetPolicyDrivenUpdateSourceForFeatureUpdates" },
+        { "name": "SetPolicyDrivenUpdateSourceForQualityUpdates" },
+        { "name": "SetPolicyDrivenUpdateSourceForDriverUpdates" },
+        { "name": "SetPolicyDrivenUpdateSourceForOtherUpdates" },
+        { "name": "DisableWindowsUpdateAccess" },
+        { "name": "ElevateNonAdmins" }
+      ]
+    },
+    {
+      "name": "Legacy Automatic Updates schedule",
+      "description": "Pre-WUfB Automatic Updates policy. UseWUServer is the value that actually redirects the client to WSUS; the rest is the old install schedule that fights Intune update rings.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU",
+      "action": "Delete",
+      "values": [
+        { "name": "UseWUServer" },
+        { "name": "NoAutoUpdate" },
+        { "name": "AUOptions" },
+        { "name": "ScheduledInstallDay" },
+        { "name": "ScheduledInstallTime" },
+        { "name": "NoAutoRebootWithLoggedOnUsers" },
+        { "name": "RebootRelaunchTimeout" },
+        { "name": "RebootRelaunchTimeoutEnabled" },
+        { "name": "RescheduleWaitTime" },
+        { "name": "RescheduleWaitTimeEnabled" },
+        { "name": "DetectionFrequency" },
+        { "name": "DetectionFrequencyEnabled" },
+        { "name": "AutoInstallMinorUpdates" }
+      ]
+    },
+    {
+      "name": "Retired lock screen and wallpaper policy",
+      "description": "Personalization tattoo from a corporate wallpaper/lock screen GPO. VERIFY FIRST: remove this group if Intune manages the lock screen, otherwise the two will fight.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows\\Personalization",
+      "action": "DeleteKey"
+    },
+    {
+      "name": "Office 2013 machine policy (retired)",
+      "description": "Office 15.0 policy branch left behind after the move to Microsoft 365 Apps (16.0). Safe to remove once no Office 2013 remains in the estate.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\office\\15.0",
+      "action": "DeleteKey"
+    },
+    {
+      "name": "Acrobat Reader 11 machine policy (retired)",
+      "description": "Adobe Reader 11.0 FeatureLockDown branch, superseded by the Reader/Acrobat DC hardening configs. Reader 11 reached end of support in 2017.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Adobe\\Acrobat Reader\\11.0",
+      "action": "DeleteKey"
+    },
+    {
+      "name": "Office 2013 user policy (retired) - existing profiles",
+      "description": "HKCU half of the Office 15.0 branch. Applied to every profile in ProfileList, which is what Intune cannot do on its own - MDM policy only reaches the enrolled user.",
+      "scope": "User",
+      "path": "SOFTWARE\\Policies\\Microsoft\\office\\15.0",
+      "action": "DeleteKey"
+    },
+    {
+      "name": "Acrobat Reader 11 user policy (retired) - existing profiles",
+      "description": "HKCU half of the Reader 11.0 branch, across all existing profiles.",
+      "scope": "User",
+      "path": "SOFTWARE\\Policies\\Adobe\\Acrobat Reader\\11.0",
+      "action": "DeleteKey"
+    },
+    {
+      "name": "Office 2013 user policy (retired) - new user template",
+      "description": "Same branch in the Default User hive, so a profile created after the migration is not seeded with the retired policy. Note the rollback limit for DefaultUser DeleteKey in the notes above.",
+      "scope": "DefaultUser",
+      "path": "SOFTWARE\\Policies\\Microsoft\\office\\15.0",
+      "action": "DeleteKey"
+    },
+    {
+      "name": "Acrobat Reader 11 user policy (retired) - new user template",
+      "description": "Reader 11.0 branch in the Default User hive.",
+      "scope": "DefaultUser",
+      "path": "SOFTWARE\\Policies\\Adobe\\Acrobat Reader\\11.0",
+      "action": "DeleteKey"
+    }
+  ]
+}

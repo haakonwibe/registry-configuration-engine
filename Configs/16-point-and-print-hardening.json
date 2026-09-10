@@ -1,0 +1,103 @@
+{
+  "$schema": "https://alttabtowork.com/schemas/registry-config-v1.json",
+  "version": "1.0",
+  "author": "Haakon Wibe",
+  "description": "Point and Print / PrintNightmare hardening - restricts print driver installation to administrators, keeps the CVE-2021-34527 elevation prompts in place, stops the workstation acting as a print server, and clears permissive user-side overrides.",
+  "created": "2026-09-09",
+  "notes": [
+    "Source: KB5005010 - Restricting installation of new printer drivers after applying the July 6, 2021 updates (CVE-2021-34527, PrintNightmare).",
+    "Source: KB5005652 - Manage new Point and Print default driver installation behavior (CVE-2021-34481).",
+    "Source: Policy CSP - Printers and ADMX_Printing / ADMX_Printing2 (Printing.admx, Printing2.admx) for every registry key name and value name below.",
+    "THE ONE THAT MATTERS: RestrictDriverInstallationToAdministrators = 1. Microsoft's own wording is 'There is no combination of mitigations that is equivalent to setting RestrictDriverInstallationToAdministrators to 1.' Since the August 10, 2021 update this is also the default when the value is absent, so this config makes the secure default explicit and detectable rather than assumed - a device where someone set it to 0 is exactly what detection is for.",
+    "NoWarningNoElevationOnInstall = 0 and UpdatePromptSettings = 0 are the CVE-2021-34527 mitigation. KB5005010: 'Setting these to non-zero values make the devices on which you've installed the CVE-2021-34527 update vulnerable.' A 1 in either value is the single most common way an environment re-opens PrintNightmare, usually set years ago to stop driver prompts annoying users.",
+    "Restricted = 1 enables the Point and Print Restrictions policy itself. With TrustedServers and InForest left unset, users may still point and print to any server, but get a warning and elevation prompt - which non-administrators cannot satisfy once RestrictDriverInstallationToAdministrators is 1. This matches the CIS recommendation of Enabled + 'Show warning and elevation prompt' for both install and update.",
+    "RegisterSpoolerRemoteRpcEndPoint = 2 disables inbound remote connections to the spooler (policy 'Allow Print Spooler to accept client connections' = Disabled). A workstation has no reason to accept print client connections; this removes the remote attack surface entirely rather than mitigating it. Do NOT deploy this group to print servers.",
+    "SPOOLER RESTART: RegisterSpoolerRemoteRpcEndPoint only takes effect after the spooler restarts, which is why that group carries rebootRequired. Remove the flag if you would rather let the next natural reboot pick it up than show users a toast.",
+    "PackagePointAndPrintOnly = 1 restricts clients to package-aware, signature-checked drivers. This is the group most likely to break real printing - a print server sharing a non-package driver stops working. Pilot it before deploying broadly; drop the group if the estate still has legacy shared drivers.",
+    "AddPrinterDrivers = 1 under SYSTEM\\...\\LanMan Print Services\\Servers is the 'Devices: Prevent users from installing printer drivers' security option. Default is Enabled on servers, Disabled on workstations - so on a client fleet this one genuinely changes behaviour. It does not affect administrators or local printers.",
+    "RpcAuthnLevelPrivacyEnabled = 1 (CVE-2021-1678) is already the default. It is set explicitly because the documented workaround for RPC-over-named-pipes compatibility is to set it to 0, and this makes such a device show up as non-compliant.",
+    "USER SCOPE: the User Configuration Point and Print Restrictions policy is deprecated but still honoured, and Microsoft recommends configuring both. The HKCU groups remove permissive overrides from every existing profile and from the new-user template - work Intune cannot do on its own, since MDM policy only reaches the enrolled user.",
+    "NOT INCLUDED - Windows protected print mode (Windows 11 24H2+) is the strategic fix: it disables third-party print drivers entirely and prints only via Windows Ready Print / IPP to Mopria certified printers. Enable with SOFTWARE\\Policies\\Microsoft\\Windows NT\\Printers\\WPP -> WindowsProtectedPrintGroupPolicyState = 1 (DWord). It is left out here because enabling it UNINSTALLS printers that use third-party drivers, so it needs a printer-fleet compatibility check first, not a remediation script.",
+    "NOT INCLUDED - disabling the Print Spooler service outright (SYSTEM\\CurrentControlSet\\Services\\Spooler\\Start = 4). That is the right answer on domain controllers and most servers, and the wrong one on a client fleet that needs to print.",
+    "Print server exclusion: groups 2 (RegisterSpoolerRemoteRpcEndPoint) and 4 (AddPrinterDrivers) will break a machine whose job is sharing printers. Target this config at clients only, or split those two groups out."
+  ],
+  "settings": [
+    {
+      "name": "Point and Print driver installation",
+      "description": "CVE-2021-34527 / CVE-2021-34481 core mitigation. RestrictDriverInstallationToAdministrators=1 requires admin rights to install or update a print driver; NoWarningNoElevationOnInstall=0 and UpdatePromptSettings=0 keep the warning and elevation prompts that the July 2021 update relies on.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows NT\\Printers\\PointAndPrint",
+      "action": "Set",
+      "values": [
+        { "name": "RestrictDriverInstallationToAdministrators", "type": "DWord", "data": 1 },
+        { "name": "NoWarningNoElevationOnInstall", "type": "DWord", "data": 0 },
+        { "name": "UpdatePromptSettings", "type": "DWord", "data": 0 },
+        { "name": "Restricted", "type": "DWord", "data": 1 }
+      ]
+    },
+    {
+      "name": "Spooler remote connections and HTTP driver download",
+      "description": "RegisterSpoolerRemoteRpcEndPoint=2 stops the spooler accepting inbound client connections (removes the remote PrintNightmare attack surface on a workstation). DisableWebPnPDownload=1 blocks print driver download over HTTP. Clients only - not print servers.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows NT\\Printers",
+      "action": "Set",
+      "rebootRequired": true,
+      "values": [
+        { "name": "RegisterSpoolerRemoteRpcEndPoint", "type": "DWord", "data": 2 },
+        { "name": "DisableWebPnPDownload", "type": "DWord", "data": 1 }
+      ]
+    },
+    {
+      "name": "Package Point and Print only",
+      "description": "Restricts point and print to package-aware drivers, whose signatures are checked on download. PILOT FIRST - a print server sharing a non-package driver will stop working for these clients.",
+      "scope": "Machine",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows NT\\Printers\\PackagePointAndPrint",
+      "action": "Set",
+      "values": [
+        { "name": "PackagePointAndPrintOnly", "type": "DWord", "data": 1 }
+      ]
+    },
+    {
+      "name": "Prevent users from installing printer drivers",
+      "description": "Security option 'Devices: Prevent users from installing printer drivers'. Default is Disabled on workstations, so this changes client behaviour. Does not affect administrators or the ability to add a local printer.",
+      "scope": "Machine",
+      "path": "SYSTEM\\CurrentControlSet\\Control\\Print\\Providers\\LanMan Print Services\\Servers",
+      "action": "Set",
+      "values": [
+        { "name": "AddPrinterDrivers", "type": "DWord", "data": 1 }
+      ]
+    },
+    {
+      "name": "RPC packet level privacy for incoming print connections",
+      "description": "CVE-2021-1678. Enabled by default; set explicitly so a device where it was turned off for RPC-over-named-pipes compatibility is reported as non-compliant.",
+      "scope": "Machine",
+      "path": "SYSTEM\\CurrentControlSet\\Control\\Print",
+      "action": "Set",
+      "values": [
+        { "name": "RpcAuthnLevelPrivacyEnabled", "type": "DWord", "data": 1 }
+      ]
+    },
+    {
+      "name": "Clear permissive user-side Point and Print overrides - existing profiles",
+      "description": "Removes NoWarningNoElevationOnInstall and UpdatePromptSettings from the deprecated User Configuration policy in every profile in ProfileList. These are typically left behind by an old GPO or GPP item that suppressed driver prompts.",
+      "scope": "User",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows NT\\Printers\\PointAndPrint",
+      "action": "Delete",
+      "values": [
+        { "name": "NoWarningNoElevationOnInstall" },
+        { "name": "UpdatePromptSettings" }
+      ]
+    },
+    {
+      "name": "Clear permissive user-side Point and Print overrides - new user template",
+      "description": "Same values in the Default User hive, so a profile created after this config is deployed is not seeded with a permissive override.",
+      "scope": "DefaultUser",
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows NT\\Printers\\PointAndPrint",
+      "action": "Delete",
+      "values": [
+        { "name": "NoWarningNoElevationOnInstall" },
+        { "name": "UpdatePromptSettings" }
+      ]
+    }
+  ]
+}

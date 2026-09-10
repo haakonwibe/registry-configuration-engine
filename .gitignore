@@ -1,4 +1,5 @@
-# Internal/private configs kept locally but never published
+# Internal/private configs kept locally but never published.
+# Named L01-, L02-, ... so the published Configs/ numbering stays sequential.
 Configs/local/
 
 # Generated Intune remediation packages
